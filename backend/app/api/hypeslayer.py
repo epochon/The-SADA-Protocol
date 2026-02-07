@@ -15,6 +15,12 @@ from app.hype_slayer.fact_checker import verify_claim, get_quarterly_data
 from app.hype_slayer.sentiment import analyze_sentiment
 from app.hype_slayer.decision_gate import calculate_confidence, make_final_decision
 from app.hype_slayer.bullshit_detector import calculate_bullshit_score, quick_ticker_check, is_known_scam_pattern
+from app.hype_slayer.risk_profiler import (
+    RiskProfileCalculator,
+    QuestionnaireRequest,
+    QuestionnaireResponse,
+    RiskProfile
+)
 
 router = APIRouter()
 
@@ -329,6 +335,148 @@ async def analyze_video_complete(request: FullAnalysisRequest):
         "verification": verification_result,
         "sentiment": sentiment_result,
         "deliberation_log": deliberation_log
+    }
+
+
+# ==================== Risk Profiling ====================
+
+@router.get("/questionnaire")
+async def get_questionnaire():
+    """
+    Get the complete risk profile questionnaire with all questions and options.
+    """
+    return {
+        "title": "Financial Risk Profile Assessment",
+        "description": "Answer 9 questions to determine your investment risk tolerance",
+        "total_questions": 9,
+        "questions": RiskProfileCalculator.QUESTIONS
+    }
+
+
+@router.post("/submit-questionnaire", response_model=QuestionnaireResponse)
+async def submit_questionnaire(request: QuestionnaireRequest):
+    """
+    Submit questionnaire answers and receive personalized risk profile.
+    
+    The AI analyzes your answers to understand:
+    - Financial stability and preparedness
+    - Investment goals and time horizon
+    - Market experience level
+    - Volatility tolerance (psychological and financial)
+    - Behavioral patterns during market downturns
+    
+    Returns a personalized profile with:
+    - Risk category (Conservative/Moderate/Aggressive)
+    - Investment constraints tailored to your tolerance
+    - Specific recommendations based on your answers
+    """
+    try:
+        # Create risk profile from answers
+        profile = RiskProfileCalculator.create_profile(request.answers)
+        
+        # Generate personalized message
+        message = f"""
+✅ Risk Profile Complete!
+
+Category: {profile.category.value}
+Score: {profile.total_score}/27
+
+Your profile indicates:
+"""
+        
+        if profile.category.value == "Conservative":
+            message += """
+- You prioritize capital preservation over growth
+- You prefer stable, predictable returns
+- High volatility causes significant stress
+- Recommended: Debt funds, FDs, Blue-chip stocks (max 30% equity)
+
+⚠️ HypeSlayer will STRICTLY flag crypto, microcap stocks, and high-risk content for you.
+"""
+        elif profile.category.value == "Moderate":
+            message += """
+- You seek balanced growth with manageable risk
+- You can handle normal market cycles
+- You're building long-term wealth systematically
+- Recommended: Balanced portfolio (50-60% equity, 40-50% debt)
+
+⚠️ HypeSlayer will warn you about meme coins and extreme speculation.
+"""
+        else:  # Aggressive
+            message += """
+- You have high risk tolerance and long time horizon
+- You can withstand significant volatility
+- You see market crashes as buying opportunities
+- Recommended: Growth stocks, crypto (with research), index funds
+
+ℹ️ HypeSlayer will focus on scam detection rather than volatility warnings.
+"""
+        
+        return QuestionnaireResponse(
+            profile=profile,
+            message=message.strip()
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing questionnaire: {str(e)}")
+
+
+@router.post("/personalized-analysis")
+async def personalized_video_analysis(
+    video_url: str,
+    user_profile: Optional[RiskProfile] = None
+):
+    """
+    Analyze a video with personalized warnings based on user's risk profile.
+    
+    This endpoint combines:
+    1. Standard HypeSlayer analysis (transcript, entities, verification, sentiment)
+    2. User's risk profile (from questionnaire)
+    3. Personalized warnings that reference specific user answers
+    
+    Example: If user said they panic at 10% drops (Q5: A), and the video promotes
+    a volatile asset, the warning will specifically mention this mismatch.
+    """
+    # First, run standard analysis
+    standard_analysis = await analyze_video_complete(FullAnalysisRequest(video_url=video_url))
+    
+    # If no profile provided, return standard analysis
+    if not user_profile:
+        return {
+            **standard_analysis,
+            "personalized_warning": None,
+            "risk_alignment": "No profile provided"
+        }
+    
+    # Extract asset class and hype score
+    asset_class = standard_analysis.get("entities", {}).get("asset", {}).get("asset_type", "unknown")
+    hype_score = standard_analysis.get("sentiment", {}).get("hype_penalty", 0)
+    
+    # Generate personalized warning
+    personalized_warning = RiskProfileCalculator.get_personalized_warning(
+        profile=user_profile,
+        asset_class=asset_class,
+        hype_score=hype_score
+    )
+    
+    # Determine risk alignment
+    risk_alignment = "ALIGNED"
+    if personalized_warning and ("CRITICAL" in personalized_warning or "🚨" in personalized_warning):
+        risk_alignment = "SEVERE_MISMATCH"
+    elif personalized_warning:
+        risk_alignment = "CAUTION_ADVISED"
+    
+    return {
+        **standard_analysis,
+        "personalized_warning": personalized_warning,
+        "risk_alignment": risk_alignment,
+        "user_profile_summary": {
+            "category": user_profile.category.value,
+            "score": user_profile.total_score,
+            "constraints": user_profile.constraints
+        }
     }
 
 
