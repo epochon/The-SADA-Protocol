@@ -6,8 +6,10 @@ Fetches comprehensive financial data and generates detailed reports
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 import warnings
+from app.services.market_data import market_data_manager
+
 warnings.filterwarnings('ignore')
 
 class StockAnalysisAgent:
@@ -22,21 +24,17 @@ class StockAnalysisAgent:
     def analyze_stock(self, symbol, exchange="NSE"):
         """
         Main analysis function - gets all available data for a stock
-        
-        Args:
-            symbol: Stock symbol (e.g., 'RELIANCE', 'TCS', 'INFY')
-            exchange: 'NSE' or 'BSE' (default: NSE)
-            
-        Returns:
-            dict: Complete stock analysis data
         """
-        # Format ticker symbol
+        # Format ticker symbol for YFinance fallback/fundamentals
         ticker_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
         
         # Initialize yfinance ticker
         stock = yf.Ticker(ticker_symbol)
         
         try:
+            # 1. Get Authentic Real-Time Price (Breeze > YFinance)
+            realtime_quote = market_data_manager.get_realtime_price(symbol, exchange)
+
             # Collect all data
             self.report_data = {
                 'symbol': symbol,
@@ -44,17 +42,16 @@ class StockAnalysisAgent:
                 'ticker_symbol': ticker_symbol,
                 'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'company_profile': self._get_company_profile(stock),
-                'current_market_data': self._get_current_market_data(stock),
+                
+                # Merge realtime data with standard market data
+                'current_market_data': {**self._get_current_market_data(stock), **realtime_quote},
+                
                 'valuation_metrics': self._get_valuation_metrics(stock),
                 'financial_health': self._get_financial_health(stock),
                 'profitability_metrics': self._get_profitability_metrics(stock),
                 'growth_metrics': self._get_growth_metrics(stock),
                 'dividend_info': self._get_dividend_info(stock),
                 'price_performance': self._get_price_performance(stock),
-                # Historical prices and financial statements are heavy, maybe skip for chat summary or limit?
-                # 'historical_prices': self._get_historical_prices(stock),
-                # 'financial_statements': self._get_financial_statements(stock), 
-                # 'quarterly_results': self._get_quarterly_results(stock),
                 'analyst_info': self._get_analyst_info(stock),
                 'risk_metrics': self._get_risk_metrics(stock)
             }
