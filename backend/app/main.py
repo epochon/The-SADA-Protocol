@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import market, agent
+from app.api import market, agent, report
 
 app = FastAPI(title="The SADA Protocol (DAAS)", description="Financial Advisor Agent Backend")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 # Include Market Routes
 app.include_router(market.router, prefix="/market", tags=["Market Data"])
 app.include_router(agent.router, prefix="/agent", tags=["AI Advisor"])
+app.include_router(report.router, prefix="/report", tags=["Reports"])
 
 @app.get("/")
 def read_root():
