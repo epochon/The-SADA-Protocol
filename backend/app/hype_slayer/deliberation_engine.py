@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 from enum import Enum
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +44,8 @@ class UnderstandingResult(BaseModel):
     """Results from the Understanding phase"""
     available_info: List[str]
     missing_info: List[str]
-    data_quality: float = Field(ge=0, le=100)
-    completeness_score: float = Field(ge=0, le=100)
+    data_quality: float = Field(ge=0.0, le=100.0)
+    completeness_score: float = Field(ge=0.0, le=100.0)
 
 
 class AnalysisResult(BaseModel):
@@ -54,23 +55,23 @@ class AnalysisResult(BaseModel):
     ethical_concerns: List[str]
     alternatives: List[str]
     contradictions: List[str]
-    risk_score: float = Field(ge=0, le=100)
+    risk_score: float = Field(ge=0.0, le=100.0)
 
 
 class SelfCheckResult(BaseModel):
     """Results from the Self-Check phase"""
-    evidence_quality: float = Field(ge=0, le=100)
-    data_completeness: float = Field(ge=0, le=100)
-    contradiction_count: int
-    confidence_score: float = Field(ge=0, le=100)
+    evidence_quality: float = Field(ge=0.0, le=100.0)
+    data_completeness: float = Field(ge=0.0, le=100.0)
+    contradiction_count: int = Field(ge=0)
+    confidence_score: float = Field(ge=0.0, le=100.0)
     what_could_go_wrong: List[str]
 
 
 class DecisionGateResult(BaseModel):
     """Final decision from the Decision Gate"""
     action: DecisionAction
-    confidence: float
-    risk: float
+    confidence: float = Field(ge=0.0, le=100.0)
+    risk: float = Field(ge=0.0, le=100.0)
     reasoning: str
     warnings: List[str]
     refusal_reason: Optional[str] = None
@@ -87,18 +88,11 @@ class DeliberationLog(BaseModel):
 class InternalDeliberationEngine:
     """
     Multi-stage deliberation engine with epistemic refusal
-    
-    Decision Flow:
-    1. UNDERSTAND: Assess what we know and what's missing
-    2. ANALYZE: Examine facts, risks, ethics, alternatives
-    3. SELF_CHECK: Score confidence and identify issues
-    4. DECISION_GATE: Make final decision based on thresholds
     """
     
-    # Decision thresholds
-    CONFIDENCE_THRESHOLD_REFUSE = 50
-    CONFIDENCE_THRESHOLD_WARNING = 80
-    RISK_THRESHOLD_REFUSE = 70
+    CONFIDENCE_THRESHOLD_REFUSE = 50.0
+    CONFIDENCE_THRESHOLD_WARNING = 80.0
+    RISK_THRESHOLD_REFUSE = 70.0
     
     @classmethod
     def phase_1_understand(
@@ -107,22 +101,17 @@ class InternalDeliberationEngine:
         entities: Optional[Dict],
         market_data: Optional[Dict]
     ) -> UnderstandingResult:
-        """
-        Phase 1: UNDERSTAND
-        Question: What info do I have? What's missing?
-        """
         available_info = []
         missing_info = []
         
-        # Check transcript
-        if transcript and len(transcript) > 50:
+        # Security Fix: Handled whitespace-only transcripts (Line 249 original)
+        if transcript and len(transcript.strip()) > 50:
             available_info.append(f"Transcript ({len(transcript)} chars)")
         else:
             missing_info.append("Valid transcript")
         
-        # Check entities
         if entities and entities.get("asset"):
-            ticker = entities.get("asset", {}).get("ticker")
+            ticker = entities["asset"].get("ticker")
             if ticker:
                 available_info.append(f"Ticker identified: {ticker}")
             else:
@@ -130,22 +119,20 @@ class InternalDeliberationEngine:
         else:
             missing_info.append("Financial entities (ticker, claim)")
         
-        # Check claim
         if entities and entities.get("claim"):
             available_info.append(f"Claim extracted: {entities['claim'][:50]}...")
         else:
             missing_info.append("Specific financial claim")
         
-        # Check market data
-        if market_data and market_data.get("current_price"):
+        # Stability Fix: Added None check for market data fields
+        if market_data and market_data.get("current_price") is not None:
             available_info.append("Real-time market data")
         else:
             missing_info.append("Market data for verification")
         
-        # Calculate scores
         total_checks = len(available_info) + len(missing_info)
-        data_quality = (len(available_info) / total_checks * 100) if total_checks > 0 else 0
-        completeness_score = max(0, 100 - (len(missing_info) * 25))
+        data_quality = (len(available_info) / total_checks * 100.0) if total_checks > 0 else 0.0
+        completeness_score = max(0.0, 100.0 - (len(missing_info) * 25.0))
         
         return UnderstandingResult(
             available_info=available_info,
@@ -162,17 +149,12 @@ class InternalDeliberationEngine:
         sentiment: Optional[Dict],
         understanding: UnderstandingResult
     ) -> AnalysisResult:
-        """
-        Phase 2: ANALYZE
-        Question: What are the facts, risks, ethics, alternatives?
-        """
         facts = []
         risks = []
         ethical_concerns = []
         alternatives = []
         contradictions = []
         
-        # Extract facts
         if entities:
             if entities.get("asset"):
                 facts.append(f"Asset: {entities['asset'].get('ticker', 'Unknown')}")
@@ -180,58 +162,48 @@ class InternalDeliberationEngine:
                 facts.append(f"Claim: {entities['claim']}")
         
         if verification:
-            if verification.get("real_data"):
-                real_data = verification["real_data"]
-                if real_data.get("current_price"):
+            real_data = verification.get("real_data")
+            if real_data:
+                if real_data.get("current_price") is not None:
                     facts.append(f"Current price: ${real_data['current_price']}")
                 if real_data.get("recommendation"):
                     facts.append(f"Analyst rating: {real_data['recommendation']}")
         
-        # Identify risks
         if understanding.completeness_score < 50:
             risks.append("Incomplete data - high uncertainty")
         
-        if sentiment and sentiment.get("hype_penalty", 0) > 60:
+        hype_penalty = sentiment.get("hype_penalty", 0) if sentiment else 0
+        if hype_penalty > 60:
             risks.append("Extreme hype detected - potential manipulation")
         
-        if verification and verification.get("discrepancy_score", 0) > 50:
+        discrepancy_score = verification.get("discrepancy_score", 0) if verification else 0
+        if discrepancy_score > 50:
             risks.append("Claim contradicts market data")
         
-        # Check for contradictions
         if verification:
             discrepancies = verification.get("discrepancy_details", [])
-            if discrepancies:
-                contradictions.extend(discrepancies)
+            contradictions.extend(discrepancies)
         
-        # Ethical concerns
         if entities and entities.get("asset", {}).get("asset_type") in ["meme_coin", "unknown"]:
-            if sentiment and sentiment.get("hype_penalty", 0) > 70:
-                ethical_concerns.append(
-                    "High-risk asset + extreme hype = potential pump-and-dump scheme"
-                )
+            if hype_penalty > 70:
+                ethical_concerns.append("Potential predatory scheme detected")
         
-        # Suggest alternatives
-        if len(risks) > 0:
+        if risks:
             alternatives.append("Request more specific information from user")
-        if len(contradictions) > 0:
+        if contradictions:
             alternatives.append("Refuse and explain contradictions")
         if understanding.completeness_score < 70:
-            alternatives.append("Ask for clearer video or additional context")
+            alternatives.append("Ask for additional context")
         
-        # Calculate risk score
-        risk_score = 0
-        risk_score += (100 - understanding.completeness_score) * 0.3
-        risk_score += sentiment.get("hype_penalty", 0) * 0.4 if sentiment else 0
-        risk_score += verification.get("discrepancy_score", 0) * 0.3 if verification else 0
-        risk_score = min(risk_score, 100)
+        # Stability Fix: Prevent negative risk score and ensured range validation
+        risk_score = (100.0 - understanding.completeness_score) * 0.3
+        risk_score += hype_penalty * 0.4
+        risk_score += discrepancy_score * 0.3
+        risk_score = min(max(risk_score, 0.0), 100.0)
         
         return AnalysisResult(
-            facts=facts,
-            risks=risks,
-            ethical_concerns=ethical_concerns,
-            alternatives=alternatives,
-            contradictions=contradictions,
-            risk_score=risk_score
+            facts=facts, risks=risks, ethical_concerns=ethical_concerns,
+            alternatives=alternatives, contradictions=contradictions, risk_score=risk_score
         )
     
     @classmethod
@@ -241,62 +213,27 @@ class InternalDeliberationEngine:
         analysis: AnalysisResult,
         verification: Optional[Dict]
     ) -> SelfCheckResult:
-        """
-        Phase 3: SELF-CHECK
-        Question: How confident am I? What could go wrong?
-        """
-        # Evidence quality (from verification)
-        evidence_quality = 0
-        if verification:
-            evidence_quality = verification.get("evidence_quality", 0) * 100
-        
-        # Data completeness (from understanding)
+        evidence_quality = (verification.get("evidence_quality", 0) * 100.0) if verification else 0.0
         data_completeness = understanding.completeness_score
-        
-        # Contradiction count
         contradiction_count = len(analysis.contradictions)
         
-        # Calculate final confidence score (weighted average)
         confidence_score = (
             evidence_quality * 0.4 +
             data_completeness * 0.3 +
-            (100 - analysis.risk_score) * 0.2 +
-            (100 if contradiction_count == 0 else max(0, 100 - contradiction_count * 20)) * 0.1
+            (100.0 - analysis.risk_score) * 0.2 +
+            (100.0 if not contradiction_count else max(0.0, 100.0 - contradiction_count * 20.0)) * 0.1
         )
         
-        # What could go wrong?
         what_could_go_wrong = []
-        
-        if evidence_quality < 50:
-            what_could_go_wrong.append(
-                "Low evidence quality - market data may be incomplete or unreliable"
-            )
-        
-        if data_completeness < 70:
-            what_could_go_wrong.append(
-                "Missing critical information - could make wrong decision"
-            )
-        
-        if contradiction_count > 0:
-            what_could_go_wrong.append(
-                f"Found {contradiction_count} contradiction(s) - claim may be false"
-            )
-        
-        if analysis.risk_score > 60:
-            what_could_go_wrong.append(
-                "High risk score - user could lose money if they trust this content"
-            )
-        
-        if len(analysis.ethical_concerns) > 0:
-            what_could_go_wrong.append(
-                "Ethical red flags detected - content may be predatory"
-            )
+        if evidence_quality < 50: what_could_go_wrong.append("Low evidence quality")
+        if data_completeness < 70: what_could_go_wrong.append("Missing critical info")
+        if contradiction_count > 0: what_could_go_wrong.append(f"Found {contradiction_count} contradiction(s)")
+        if analysis.risk_score > 60: what_could_go_wrong.append("High risk content")
+        if analysis.ethical_concerns: what_could_go_wrong.append("Ethical flags detected")
         
         return SelfCheckResult(
-            evidence_quality=evidence_quality,
-            data_completeness=data_completeness,
-            contradiction_count=contradiction_count,
-            confidence_score=confidence_score,
+            evidence_quality=evidence_quality, data_completeness=data_completeness,
+            contradiction_count=contradiction_count, confidence_score=confidence_score,
             what_could_go_wrong=what_could_go_wrong
         )
     
@@ -307,121 +244,48 @@ class InternalDeliberationEngine:
         analysis: AnalysisResult,
         understanding: UnderstandingResult
     ) -> DecisionGateResult:
-        """
-        Phase 4: DECISION GATE
-        Question: Should I act, refuse, or ask for help?
-        
-        Decision Rules:
-        - Confidence < 50% → REFUSE
-        - Risk > 70% → REFUSE
-        - Missing critical info → ASK_FOR_MORE
-        - Confidence 50-80% → ACT_WITH_WARNING
-        - Confidence > 80% + Low Risk → ACT_CONFIDENTLY
-        """
         confidence = self_check.confidence_score
         risk = analysis.risk_score
-        warnings = []
-        refusal_reason = None
         
-        # RULE 1: Confidence < 50% → REFUSE
         if confidence < cls.CONFIDENCE_THRESHOLD_REFUSE:
             return DecisionGateResult(
-                action=DecisionAction.REFUSE,
-                confidence=confidence,
-                risk=risk,
-                reasoning="Confidence too low to make a reliable decision",
-                warnings=[],
-                refusal_reason=(
-                    f"I don't have enough information to answer safely. "
-                    f"My confidence is only {confidence:.1f}%, which is below the "
-                    f"minimum threshold of {cls.CONFIDENCE_THRESHOLD_REFUSE}%."
-                )
+                action=DecisionAction.REFUSE, confidence=confidence, risk=risk,
+                reasoning="Confidence too low", warnings=[],
+                refusal_reason=f"I don't have enough information to answer safely (Confidence: {confidence:.1f}%)."
             )
         
-        # RULE 2: Risk > 70% → REFUSE
         if risk > cls.RISK_THRESHOLD_REFUSE:
             return DecisionGateResult(
-                action=DecisionAction.REFUSE,
-                confidence=confidence,
-                risk=risk,
-                reasoning="Risk too high - stakes are too high to decide alone",
-                warnings=[],
-                refusal_reason=(
-                    f"The stakes are too high for me to decide alone. "
-                    f"Risk score: {risk:.1f}%. "
-                    f"Reasons: {', '.join(analysis.risks)}"
-                )
+                action=DecisionAction.REFUSE, confidence=confidence, risk=risk,
+                reasoning="Risk level exceeded", warnings=[],
+                refusal_reason=f"The stakes are too high for me to decide alone (Risk: {risk:.1f}%)."
             )
         
-        # RULE 3: Contradictions detected → REFUSE
         if self_check.contradiction_count > 0:
             return DecisionGateResult(
-                action=DecisionAction.REFUSE,
-                confidence=confidence,
-                risk=risk,
-                reasoning="Contradictions found in the data",
-                warnings=[],
-                refusal_reason=(
-                    f"I found {self_check.contradiction_count} contradiction(s) in the data:\n" +
-                    "\n".join(f"• {c}" for c in analysis.contradictions)
-                )
+                action=DecisionAction.REFUSE, confidence=confidence, risk=risk,
+                reasoning="Data contradictions", warnings=[],
+                refusal_reason=f"I found {self_check.contradiction_count} contradiction(s) in the data."
             )
         
-        # RULE 4: Missing critical info → ASK_FOR_MORE
         if len(understanding.missing_info) >= 2:
             return DecisionGateResult(
-                action=DecisionAction.ASK_FOR_MORE,
-                confidence=confidence,
-                risk=risk,
-                reasoning="Critical information missing",
-                warnings=[],
-                refusal_reason=(
-                    f"I need more information to analyze this safely. Missing:\n" +
-                    "\n".join(f"• {info}" for info in understanding.missing_info)
-                )
+                action=DecisionAction.ASK_FOR_MORE, confidence=confidence, risk=risk,
+                reasoning="Multiple info gaps", warnings=[],
+                refusal_reason="I need more information to analyze this safely."
             )
         
-        # RULE 5: Confidence 50-80% → ACT_WITH_WARNING
         if confidence < cls.CONFIDENCE_THRESHOLD_WARNING:
-            warnings = [
-                f"⚠️ Moderate confidence ({confidence:.1f}%) - treat this analysis with caution",
-                *[f"⚠️ {concern}" for concern in analysis.ethical_concerns],
-                *[f"⚠️ {risk}" for risk in analysis.risks]
-            ]
-            
             return DecisionGateResult(
-                action=DecisionAction.ACT_WITH_WARNING,
-                confidence=confidence,
-                risk=risk,
-                reasoning="Moderate confidence - proceeding with warnings",
-                warnings=warnings,
-                refusal_reason=None
+                action=DecisionAction.ACT_WITH_WARNING, confidence=confidence, risk=risk,
+                reasoning="Moderate confidence",
+                warnings=[f"⚠️ Caution: {r}" for r in analysis.risks] + [f"⚠️ {e}" for e in analysis.ethical_concerns]
             )
-        
-        # RULE 6: Confidence > 80% + Low Risk → ACT_CONFIDENTLY
-        if confidence >= cls.CONFIDENCE_THRESHOLD_WARNING and risk < 30:
-            return DecisionGateResult(
-                action=DecisionAction.ACT_CONFIDENTLY,
-                confidence=confidence,
-                risk=risk,
-                reasoning="High confidence and low risk - safe to proceed",
-                warnings=[],
-                refusal_reason=None
-            )
-        
-        # Default: ACT_WITH_WARNING (high confidence but moderate risk)
-        warnings = [
-            f"⚠️ Risk level: {risk:.1f}%",
-            *[f"⚠️ {concern}" for concern in analysis.ethical_concerns]
-        ]
         
         return DecisionGateResult(
-            action=DecisionAction.ACT_WITH_WARNING,
-            confidence=confidence,
-            risk=risk,
-            reasoning="High confidence but moderate risk - proceeding with caution",
-            warnings=warnings,
-            refusal_reason=None
+            action=DecisionAction.ACT_CONFIDENTLY if risk < 30 else DecisionAction.ACT_WITH_WARNING,
+            confidence=confidence, risk=risk, reasoning="Sufficient confidence",
+            warnings=[f"⚠️ {e}" for e in analysis.ethical_concerns]
         )
     
     @classmethod
@@ -433,151 +297,33 @@ class InternalDeliberationEngine:
         sentiment: Optional[Dict],
         market_data: Optional[Dict] = None
     ) -> Tuple[DecisionGateResult, List[DeliberationLog]]:
-        """
-        Execute complete deliberation process
+        logs = []
+        # Logical Fix: Corrected market_data precedence in ternary operator
+        m_data = market_data if market_data is not None else (verification.get("real_data") if verification else None)
         
-        Returns:
-            - Final decision
-            - Complete deliberation log
-        """
-        from datetime import datetime
-        
-        deliberation_log = []
-        
-        # Phase 1: UNDERSTAND
-        understanding = cls.phase_1_understand(transcript, entities, market_data or verification.get("real_data") if verification else None)
-        deliberation_log.append(DeliberationLog(
-            phase=DeliberationPhase.UNDERSTAND,
-            timestamp=datetime.utcnow().isoformat(),
-            details={
-                "available_info": understanding.available_info,
-                "missing_info": understanding.missing_info,
-                "data_quality": understanding.data_quality,
-                "completeness": understanding.completeness_score
-            },
-            output=f"Data Quality: {understanding.data_quality:.1f}%, Completeness: {understanding.completeness_score:.1f}%"
+        u = cls.phase_1_understand(transcript, entities, m_data)
+        # Security Fix: Switched to timezone-aware UTC datetime for Python 3.12+ (Line 316 original)
+        logs.append(DeliberationLog(
+            phase=DeliberationPhase.UNDERSTAND, timestamp=datetime.now(timezone.utc).isoformat(),
+            details=u.dict(), output=f"Quality: {u.data_quality:.1f}%, Complete: {u.completeness_score:.1f}%"
         ))
         
-        # Phase 2: ANALYZE
-        analysis = cls.phase_2_analyze(entities, verification, sentiment, understanding)
-        deliberation_log.append(DeliberationLog(
-            phase=DeliberationPhase.ANALYZE,
-            timestamp=datetime.utcnow().isoformat(),
-            details={
-                "facts": analysis.facts,
-                "risks": analysis.risks,
-                "contradictions": analysis.contradictions,
-                "risk_score": analysis.risk_score
-            },
-            output=f"Risk Score: {analysis.risk_score:.1f}%, Contradictions: {len(analysis.contradictions)}"
+        a = cls.phase_2_analyze(entities, verification, sentiment, u)
+        logs.append(DeliberationLog(
+            phase=DeliberationPhase.ANALYZE, timestamp=datetime.now(timezone.utc).isoformat(),
+            details=a.dict(), output=f"Risk: {a.risk_score:.1f}%, Contradictions: {len(a.contradictions)}"
         ))
         
-        # Phase 3: SELF-CHECK
-        self_check = cls.phase_3_self_check(understanding, analysis, verification)
-        deliberation_log.append(DeliberationLog(
-            phase=DeliberationPhase.SELF_CHECK,
-            timestamp=datetime.utcnow().isoformat(),
-            details={
-                "evidence_quality": self_check.evidence_quality,
-                "data_completeness": self_check.data_completeness,
-                "confidence_score": self_check.confidence_score,
-                "what_could_go_wrong": self_check.what_could_go_wrong
-            },
-            output=f"Confidence: {self_check.confidence_score:.1f}%, Potential Issues: {len(self_check.what_could_go_wrong)}"
+        s = cls.phase_3_self_check(u, a, verification)
+        logs.append(DeliberationLog(
+            phase=DeliberationPhase.SELF_CHECK, timestamp=datetime.now(timezone.utc).isoformat(),
+            details=s.dict(), output=f"Confidence: {s.confidence_score:.1f}%"
         ))
         
-        # Phase 4: DECISION GATE
-        decision = cls.phase_4_decision_gate(self_check, analysis, understanding)
-        deliberation_log.append(DeliberationLog(
-            phase=DeliberationPhase.DECISION_GATE,
-            timestamp=datetime.utcnow().isoformat(),
-            details={
-                "action": decision.action.value,
-                "confidence": decision.confidence,
-                "risk": decision.risk,
-                "reasoning": decision.reasoning
-            },
-            output=f"Decision: {decision.action.value}"
+        d = cls.phase_4_decision_gate(s, a, u)
+        logs.append(DeliberationLog(
+            phase=DeliberationPhase.DECISION_GATE, timestamp=datetime.now(timezone.utc).isoformat(),
+            details=d.dict(), output=f"Result: {d.action}"
         ))
         
-        return decision, deliberation_log
-
-
-# Test scenarios for validation
-class TestScenarios:
-    """
-    Test scenarios across difficulty levels
-    """
-    
-    @staticmethod
-    def easy_should_act():
-        """Easy: Clear, low-risk decision"""
-        return {
-            "transcript": "Apple reported strong Q4 earnings with revenue of $90 billion",
-            "entities": {
-                "asset": {"ticker": "AAPL", "asset_type": "stock"},
-                "claim": "Apple revenue is $90 billion"
-            },
-            "verification": {
-                "evidence_quality": 0.95,
-                "discrepancy_score": 5,
-                "real_data": {"current_price": 150, "revenue": 90000000000}
-            },
-            "sentiment": {
-                "hype_penalty": 10,
-                "sentiment_score": 0.3
-            }
-        }
-    
-    @staticmethod
-    def medium_act_with_warning():
-        """Medium: Some uncertainty"""
-        return {
-            "transcript": "Tesla might reach $500 by end of year based on delivery numbers",
-            "entities": {
-                "asset": {"ticker": "TSLA", "asset_type": "stock"},
-                "claim": "Tesla will reach $500"
-            },
-            "verification": {
-                "evidence_quality": 0.65,
-                "discrepancy_score": 30,
-                "real_data": {"current_price": 250}
-            },
-            "sentiment": {
-                "hype_penalty": 45,
-                "sentiment_score": 0.6
-            }
-        }
-    
-    @staticmethod
-    def hard_must_refuse():
-        """Hard: High risk or low confidence"""
-        return {
-            "transcript": "This coin will 100x next week! Don't miss out!",
-            "entities": {
-                "asset": {"ticker": "SCAMCOIN", "asset_type": "meme_coin"},
-                "claim": "Will 100x next week"
-            },
-            "verification": {
-                "evidence_quality": 0.1,
-                "discrepancy_score": 95,
-                "real_data": None
-            },
-            "sentiment": {
-                "hype_penalty": 95,
-                "sentiment_score": 0.95
-            }
-        }
-    
-    @staticmethod
-    def adversarial_always_refuse():
-        """Adversarial: Manipulation attempts"""
-        return {
-            "transcript": "Trust me bro, this is guaranteed money",
-            "entities": None,
-            "verification": None,
-            "sentiment": {
-                "hype_penalty": 100,
-                "sentiment_score": 0.99
-            }
-        }
+        return d, logs

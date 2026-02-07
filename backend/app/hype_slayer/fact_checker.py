@@ -1,42 +1,62 @@
-"""
-Fact-Checker Service
-Verifies financial claims against real market data using yfinance
-"""
-
-import yfinance as yf
+from app.services.market_data import market_data_manager
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime
+import yfinance as yf
 
 
-def verify_claim(ticker: str, claim: str, claim_type: str = "general") -> Dict[str, Any]:
+def verify_claim(ticker: str, claim: str, claim_type: str = "general", asset_type: str = "stock") -> Dict[str, Any]:
     """
     Verify a financial claim against real market data.
+    Uses MarketDataManager for improved accuracy (Alpha Vantage + YFinance Fallback).
     
     Args:
-        ticker: Stock/crypto ticker symbol
+        ticker: Stock/crypto ticker symbol (e.g., RELIANCE, BTC, AAPL)
         claim: The claim being made
         claim_type: One of "price_prediction", "revenue", "earnings", "growth", "general"
+        asset_type: "stock" or "crypto"
         
     Returns:
         dict: Verification result with discrepancy analysis
     """
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
+        # Normalize ticker for YFinance/Alpha Vantage
+        normalized_ticker = ticker
+        exchange = "NSE" # Default for HypeSlayer target audience
         
-        # Check if we got valid data
-        if not info or info.get('regularMarketPrice') is None:
+        if asset_type == "crypto":
+            if not ticker.endswith("-USD"):
+                normalized_ticker = f"{ticker}-USD"
+        elif asset_type == "stock":
+            # If no suffix and looks like an Indian stock (usually uppercase only, 1-10 chars)
+            if "." not in ticker and len(ticker) <= 12:
+                # We try NSE first as default
+                normalized_ticker = f"{ticker}.NS"
+        
+        # 1. Try to get data via MarketDataManager (which uses Alpha Vantage > YFinance)
+        # Note: market_data_manager expects base symbol and exchange separately for AV
+        base_symbol = ticker.split('.')[0] if '.' in ticker else ticker
+        market_info = market_data_manager.get_realtime_price(base_symbol, exchange)
+        fundamentals = market_data_manager.get_fundamentals(base_symbol, exchange)
+        
+        # Merge data
+        stock = yf.Ticker(normalized_ticker)
+        yf_info = stock.info
+        
+        # Check if we got valid price data
+        current_price = market_info.get("Current Price") or yf_info.get('regularMarketPrice') or yf_info.get('currentPrice')
+        
+        if current_price is None:
             return {
                 "verification_status": "no_data",
                 "ticker": ticker,
                 "real_data": None,
-                "discrepancy_score": 100,  # Max penalty for no data
+                "discrepancy_score": 100,
                 "evidence_quality": 0.0,
-                "error": f"No market data available for ticker: {ticker}"
+                "error": f"No market data available for ticker: {ticker}. Try adding exchange suffix (e.g. .NS for NSE or -USD for Crypto)."
             }
         
         # Gather comprehensive real data
-        real_data = gather_real_data(stock, info)
+        real_data = gather_real_data(stock, yf_info, market_info, fundamentals)
         
         # Calculate evidence quality based on data completeness
         evidence_quality = calculate_evidence_quality(real_data)
@@ -46,13 +66,14 @@ def verify_claim(ticker: str, claim: str, claim_type: str = "general") -> Dict[s
         
         return {
             "verification_status": discrepancy_result["status"],
-            "ticker": ticker,
-            "company_name": info.get("shortName", ticker),
+            "ticker": normalized_ticker,
+            "company_name": yf_info.get("shortName", ticker),
             "real_data": real_data,
             "discrepancy_score": discrepancy_result["score"],
             "discrepancy_details": discrepancy_result["details"],
             "evidence_quality": evidence_quality,
-            "data_freshness": datetime.now().isoformat()
+            "data_freshness": datetime.now().isoformat(),
+            "source": market_info.get("Source", "Mixed")
         }
         
     except Exception as e:
@@ -66,22 +87,25 @@ def verify_claim(ticker: str, claim: str, claim_type: str = "general") -> Dict[s
         }
 
 
-def gather_real_data(stock, info: Dict) -> Dict[str, Any]:
-    """Gather comprehensive real market data for verification."""
+def gather_real_data(stock, info: Dict, market_info: Dict, fundamentals: Dict) -> Dict[str, Any]:
+    """Gather comprehensive real market data merging multiple sources."""
     data = {
-        # Current pricing
-        "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-        "previous_close": info.get("previousClose"),
+        # Current pricing (Prioritizing realtime source)
+        "current_price": market_info.get("Current Price") or info.get("currentPrice") or info.get("regularMarketPrice"),
+        "previous_close": info.get("previousClose") or market_info.get("Previous Close"),
         "day_high": info.get("dayHigh"),
         "day_low": info.get("dayLow"),
-        "52_week_high": info.get("fiftyTwoWeekHigh"),
-        "52_week_low": info.get("fiftyTwoWeekLow"),
+        "52_week_high": info.get("fiftyTwoWeekHigh") or fundamentals.get("52WeekHigh"),
+        "52_week_low": info.get("fiftyTwoWeekLow") or fundamentals.get("52WeekLow"),
         
-        # Valuation
-        "market_cap": info.get("marketCap"),
-        "pe_ratio": info.get("trailingPE"),
+        # Valuation (Prioritizing fundamentals source)
+        "market_cap": fundamentals.get("Market Cap") or info.get("marketCap"),
+        "pe_ratio": fundamentals.get("PE Ratio") or info.get("trailingPE"),
         "forward_pe": info.get("forwardPE"),
         "peg_ratio": info.get("pegRatio"),
+        "pb_ratio": fundamentals.get("PB Ratio") or info.get("priceToBook"),
+        "eps": fundamentals.get("EPS") or info.get("trailingEps"),
+        "roe": fundamentals.get("ROE") or info.get("returnOnEquity"),
         
         # Financials
         "revenue": info.get("totalRevenue"),
@@ -91,11 +115,12 @@ def gather_real_data(stock, info: Dict) -> Dict[str, Any]:
         "ebitda": info.get("ebitda"),
         
         # Analyst data
-        "target_mean_price": info.get("targetMeanPrice"),
+        "target_mean_price": info.get("targetMeanPrice") or market_info.get("Target Price"),
         "target_high_price": info.get("targetHighPrice"),
         "target_low_price": info.get("targetLowPrice"),
         "recommendation": info.get("recommendationKey"),
         "num_analyst_opinions": info.get("numberOfAnalystOpinions"),
+        "sector": fundamentals.get("Sector") or info.get("sector"),
     }
     
     # Get historical price data for trend analysis
