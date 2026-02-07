@@ -95,20 +95,34 @@ def make_final_decision(
     transcript_result: Dict,
     entity_result: Dict,
     verification_result: Dict,
-    sentiment_result: Dict
+    sentiment_result: Dict,
+    use_deliberation: bool = True
 ) -> Dict[str, Any]:
     """
     Orchestrate final decision from all analysis components.
     
-    This is the main decision function that combines all service outputs.
+    Now uses Internal Deliberation Engine for multi-stage reasoning:
+    1. UNDERSTAND: What do we know? What's missing?
+    2. ANALYZE: Facts, risks, ethics, alternatives
+    3. SELF-CHECK: Confidence scoring and contradiction detection
+    4. DECISION GATE: Act/Refuse/Escalate
+    
+    Args:
+        use_deliberation: If True, uses full deliberation engine (recommended)
+                         If False, uses legacy simple scoring
     """
+    # Import deliberation engine
+    if use_deliberation:
+        from app.hype_slayer.deliberation_engine import InternalDeliberationEngine
+    
     # Check for critical failures first
     if transcript_result.get("status") == "error":
         return {
             "decision": "REFUSE",
             "confidence_score": 0,
             "reason": "Failed to fetch transcript",
-            "error": transcript_result.get("error")
+            "error": transcript_result.get("error"),
+            "refusal_reason": "I cannot analyze this video because the transcript could not be fetched. Please ensure the video has captions enabled."
         }
     
     if entity_result.get("status") == "refused":
@@ -116,33 +130,62 @@ def make_final_decision(
             "decision": "REFUSE",
             "confidence_score": 0,
             "reason": "Could not identify financial asset/claim",
-            "refuse_reason": entity_result.get("refuse_reason")
+            "refuse_reason": entity_result.get("refuse_reason"),
+            "refusal_reason": entity_result.get("refuse_reason")
         }
     
-    # Extract scores from each service
-    evidence_quality = verification_result.get("evidence_quality", 0.5)
+    # Use deliberation engine for rigorous decision-making
+    if use_deliberation:
+        decision, deliberation_log = InternalDeliberationEngine.deliberate(
+            transcript=transcript_result.get("transcript"),
+            entities=entity_result,
+            verification=verification_result,
+            sentiment=sentiment_result
+        )
+        
+        # Map deliberation decision to HypeSlayer format
+        hypeslayer_decision = "REFUSE"
+        if decision.action.value in ["ACT_CONFIDENTLY", "ACT_WITH_WARNING"]:
+            hypeslayer_decision = "VERIFY"
+        elif decision.action.value == "ASK_FOR_MORE":
+            hypeslayer_decision = "REFUSE"  # Treat as refusal with explanation
+        
+        return {
+            "decision": hypeslayer_decision,
+            "confidence_score": round(decision.confidence, 1),
+            "risk_score": round(decision.risk, 1),
+            "action": decision.action.value,
+            "reasoning": decision.reasoning,
+            "warnings": decision.warnings,
+            "refusal_reason": decision.refusal_reason,
+            "deliberation_log": [log.dict() for log in deliberation_log],
+            "entity": entity_result.get("asset"),
+            "claim": entity_result.get("claim"),
+            "hype_level": sentiment_result.get("hype_level"),
+            "verification_status": verification_result.get("verification_status"),
+            "timestamp": datetime.now().isoformat()
+        }
     
-    # Data completeness from entity extraction confidence
-    data_completeness = entity_result.get("confidence", 0.5)
-    
-    # Discrepancy score from fact checker
-    discrepancy_score = verification_result.get("discrepancy_score", 50)
-    
-    # Hype penalty from sentiment
-    hype_penalty = sentiment_result.get("hype_penalty", 0)
-    
-    # Calculate final confidence
-    decision_result = calculate_confidence(
-        evidence_quality=evidence_quality,
-        data_completeness=data_completeness,
-        discrepancy_score=discrepancy_score,
-        hype_penalty=hype_penalty
-    )
-    
-    # Add context from other services
-    decision_result["entity"] = entity_result.get("asset")
-    decision_result["claim"] = entity_result.get("claim")
-    decision_result["hype_level"] = sentiment_result.get("hype_level")
-    decision_result["verification_status"] = verification_result.get("verification_status")
-    
-    return decision_result
+    # Legacy simple scoring (fallback)
+    else:
+        # Extract scores from each service
+        evidence_quality = verification_result.get("evidence_quality", 0.5)
+        data_completeness = entity_result.get("confidence", 0.5)
+        discrepancy_score = verification_result.get("discrepancy_score", 50)
+        hype_penalty = sentiment_result.get("hype_penalty", 0)
+        
+        # Calculate final confidence
+        decision_result = calculate_confidence(
+            evidence_quality=evidence_quality,
+            data_completeness=data_completeness,
+            discrepancy_score=discrepancy_score,
+            hype_penalty=hype_penalty
+        )
+        
+        # Add context from other services
+        decision_result["entity"] = entity_result.get("asset")
+        decision_result["claim"] = entity_result.get("claim")
+        decision_result["hype_level"] = sentiment_result.get("hype_level")
+        decision_result["verification_status"] = verification_result.get("verification_status")
+        
+        return decision_result

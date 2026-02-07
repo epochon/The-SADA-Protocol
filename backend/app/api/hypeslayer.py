@@ -480,6 +480,74 @@ async def personalized_video_analysis(
     }
 
 
+# ==================== Testing & Validation ====================
+
+@router.post("/test-deliberation")
+async def test_deliberation_engine(scenario: str = "easy"):
+    """
+    Test the Internal Deliberation Engine with predefined scenarios.
+    
+    Scenarios:
+    - easy: Clear, low-risk decision (should ACT_CONFIDENTLY)
+    - medium: Some uncertainty (should ACT_WITH_WARNING)
+    - hard: High risk or low confidence (should REFUSE)
+    - adversarial: Manipulation attempts (should REFUSE)
+    
+    This endpoint demonstrates the 4-phase deliberation process:
+    1. UNDERSTAND: What do we know? What's missing?
+    2. ANALYZE: Facts, risks, ethics, alternatives
+    3. SELF-CHECK: Confidence scoring
+    4. DECISION GATE: Act/Refuse/Escalate
+    """
+    from app.hype_slayer.deliberation_engine import InternalDeliberationEngine, TestScenarios
+    
+    # Get test scenario
+    scenarios = {
+        "easy": TestScenarios.easy_should_act(),
+        "medium": TestScenarios.medium_act_with_warning(),
+        "hard": TestScenarios.hard_must_refuse(),
+        "adversarial": TestScenarios.adversarial_always_refuse()
+    }
+    
+    if scenario not in scenarios:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scenario. Choose from: {list(scenarios.keys())}"
+        )
+    
+    test_data = scenarios[scenario]
+    
+    # Run deliberation
+    decision, deliberation_log = InternalDeliberationEngine.deliberate(
+        transcript=test_data.get("transcript"),
+        entities=test_data.get("entities"),
+        verification=test_data.get("verification"),
+        sentiment=test_data.get("sentiment")
+    )
+    
+    return {
+        "scenario": scenario,
+        "test_data": test_data,
+        "final_decision": {
+            "action": decision.action.value,
+            "confidence": decision.confidence,
+            "risk": decision.risk,
+            "reasoning": decision.reasoning,
+            "warnings": decision.warnings,
+            "refusal_reason": decision.refusal_reason
+        },
+        "deliberation_process": [
+            {
+                "phase": log.phase.value,
+                "timestamp": log.timestamp,
+                "output": log.output,
+                "details": log.details
+            }
+            for log in deliberation_log
+        ]
+    }
+
+
 # ==================== Health Check ====================
 
 @router.get("/health")
