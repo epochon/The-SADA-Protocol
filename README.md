@@ -1,7 +1,7 @@
 <<<<<<< HEAD
-# The SADA Protocol (DAAS)
+# The SADA Protocol (DAS)
 
-**The SADA Protocol (DAAS)** is an advanced AI Agent designed to function as a personal financial advisor. It combines the analytical power of large language models with real-time financial data to provide actionable insights, portfolio management, and financial planning.
+**The SADA Protocol (DAS)** is an advanced AI Agent designed to function as a personal financial advisor. It combines the analytical power of large language models with real-time financial data to provide actionable insights, portfolio management, and financial planning.
 
 ## 🚀 Key Features
 
