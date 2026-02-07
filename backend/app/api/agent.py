@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 import os
 import json
 from openai import OpenAI
-from app.agent.tools import get_available_tools, get_realtime_price, get_company_info
+from app.agent.tools import get_available_tools, get_realtime_price, get_company_info, get_indian_stock_analysis
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -34,7 +34,7 @@ def chat_with_agent(request: ChatRequest):
         response = client.chat.completions.create(
             model=request.model,
             messages=[
-                {"role": "system", "content": "You are a highly intelligent financial advisor agent named SADA. You have access to real-time market data tools. Always use these tools to provide accurate, data-driven advice. Be concise, professional, and helpful."},
+                {"role": "system", "content": "You are a highly intelligent financial advisor agent named SADA. You have access to real-time market data tools including a specialized tool for Indian Stocks (NSE/BSE). Always use these tools to provide accurate, data-driven advice. Be concise, professional, and helpful."},
                 *[msg.dict(exclude_none=True) for msg in request.messages]
             ],
             tools=get_available_tools(),
@@ -59,6 +59,11 @@ def chat_with_agent(request: ChatRequest):
                     tool_response = json.dumps(get_realtime_price(function_args.get("symbol")))
                 elif function_name == "get_company_info":
                     tool_response = json.dumps(get_company_info(function_args.get("symbol")))
+                elif function_name == "get_indian_stock_analysis":
+                    tool_response = json.dumps(get_indian_stock_analysis(
+                        function_args.get("symbol"), 
+                        function_args.get("exchange", "NSE")
+                    ))
                 else:
                     tool_response = json.dumps({"error": "Unknown tool"})
                     
