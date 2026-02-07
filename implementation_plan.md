@@ -21,10 +21,10 @@ While the template mentioned Node.js, **Python** is the industry standard for Fi
 ## Step-by-Step Implementation
 
 ### Phase 1: Foundation (Current Step)
-- [ ] Initialize Next.js project (Frontend)
-- [ ] Initialize FastAPI project (Backend)
-- [ ] Set up Project Structure
-- [ ] Configure Proxy for local development
+- [x] Initialize Next.js project (Frontend)
+- [x] Initialize FastAPI project (Backend)
+- [x] Set up Project Structure
+- [x] Configure Proxy for local development
 
 ### Phase 2: Core Components
 - [ ] Build "Market Ticker" component

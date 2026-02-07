@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+:root {
+  /* Default to Dark Mode aesthetics for "FinTech" feel */
+  --background: #09090b; /* Zinc 950 */
+  --foreground: #fafafa; /* Zinc 50 */
+  
+  --primary: #10b981; /* Emerald 500 */
+  --primary-foreground: #022c22; /* Emerald 950 */
+  
+  --secondary: #27272a; /* Zinc 800 */
+  --secondary-foreground: #fafafa;
+  
+  --accent: #27272a; /* Zinc 800 */
+  --accent-foreground: #fafafa;
+  
+  --destructive: #ef4444; /* Red 500 */
+  --destructive-foreground: #fafafa;
+
+  --border: #27272a; /* Zinc 800 */
+  --input: #27272a;
+  --ring: #10b981;
+}
+
+/* Light mode override if needed, but we focus on dark */
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Keeping it dark for now as per "FinTech" request, or maybe implement light mode later */
+    /* For now, force dark theme as per "sleek, dark-mode" requirement */
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  antialiased;
+}
+
+/* Custom Utilities */
+@layer utilities {
+  .glass {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); /* Emerald glow */
+  }
+}
