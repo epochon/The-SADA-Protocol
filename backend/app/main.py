@@ -32,11 +32,8 @@ app.include_router(agent.router, prefix="/agent", tags=["AI Advisor"])
 app.include_router(report.router, prefix="/report", tags=["Reports"])
 
 # ==================== HypeSlayer Routes ====================
-# Primary endpoint: /api/analyze-video
-app.include_router(hypeslayer.router, prefix="/api", tags=["HypeSlayer"])
-
-# Legacy/Compatibility endpoint: /hypeslayer/analyze-video
-app.include_router(hypeslayer.router, prefix="/hypeslayer", tags=["HypeSlayer (Compat)"])
+# Using consistent prefix for all HypeSlayer operations
+app.include_router(hypeslayer.router, prefix="/hypeslayer", tags=["HypeSlayer"])
 
 
 @app.get("/")

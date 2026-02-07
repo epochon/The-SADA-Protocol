@@ -127,7 +127,7 @@ const RiskProfileQuestionnaire = () => {
     const handleSubmit = async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/hypeslayer/submit-questionnaire', {
+            const response = await fetch('/api/hypeslayer/submit-questionnaire', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ answers })
@@ -152,24 +152,24 @@ const RiskProfileQuestionnaire = () => {
         }
     };
 
-    const progress = ((currentStep + 1) / totalQuestions) * 100;
+    const progress = (currentStep / totalQuestions) * 100;
 
     if (result) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+            <div className="w-full flex items-center justify-center p-2">
                 <motion.div
                     initial={{ opacity: 0, scale: 0.9 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="max-w-2xl w-full bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl"
+                    className="max-w-2xl w-full bg-zinc-900/50 backdrop-blur-xl rounded-3xl p-8 border border-zinc-800 shadow-2xl"
                 >
                     <div className="text-center mb-8">
-                        <div className="inline-block p-4 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full mb-4">
-                            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        <div className="inline-block p-4 bg-gradient-to-r from-green-400 to-emerald-500 rounded-full mb-4 shadow-lg shadow-emerald-500/20">
+                            <svg className="w-12 h-12 text-zinc-950" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                             </svg>
                         </div>
                         <h2 className="text-4xl font-bold text-white mb-2">Profile Complete!</h2>
-                        <p className="text-gray-300">Your personalized investment profile is ready</p>
+                        <p className="text-zinc-400">Your personalized investment profile is ready</p>
                     </div>
 
                     <div className="space-y-6">
@@ -235,7 +235,7 @@ const RiskProfileQuestionnaire = () => {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-6">
+        <div className="w-full flex items-center justify-center p-2">
             <div className="max-w-3xl w-full">
                 {/* Progress Bar */}
                 <div className="mb-8">
