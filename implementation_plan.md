@@ -27,9 +27,9 @@ While the template mentioned Node.js, **Python** is the industry standard for Fi
 - [x] Configure Proxy for local development
 
 ### Phase 2: Core Components
-- [ ] Build "Market Ticker" component
-- [ ] Build "Chat Interface" component
-- [ ] Integrate `yfinance` in Python for real-time data
+- [x] Build "Market Ticker" component
+- [x] Build "Chat Interface" component
+- [x] Integrate `yfinance` in Python for real-time data
 
 ### Phase 3: AI Agent Integration
 - [ ] Setup LLM (OpenAI/Anthropic)

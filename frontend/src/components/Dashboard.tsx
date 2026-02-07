@@ -1,5 +1,6 @@
 import React from 'react';
 import MarketTicker from './MarketTicker';
+import ChatInterface from './ChatInterface';
 
 const Dashboard: React.FC = () => {
     return (
@@ -58,26 +59,7 @@ const Dashboard: React.FC = () => {
 
                 {/* Right Column: AI Chat Agent */}
                 <div className="md:col-span-1">
-                    <div className="glass-card h-full rounded-xl flex flex-col p-4">
-                        <div className="flex items-center justify-between mb-4 border-b border-zinc-800 pb-2">
-                            <h2 className="font-semibold">Financial Advisor Agent</h2>
-                            <span className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded-full">Online</span>
-                        </div>
-                        <div className="flex-1 bg-zinc-900/30 rounded-lg p-4 mb-4 overflow-y-auto">
-                            <div className="flex flex-col space-y-4">
-                                <div className="self-start bg-zinc-800 rounded-lg p-3 max-w-[85%] text-sm text-zinc-200">
-                                    Hello! I'm SADA, your AI financial advisor. How can I help you manage your wealth today?
-                                </div>
-                            </div>
-                        </div>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                placeholder="Ask for advice..."
-                                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg py-3 px-4 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
-                            />
-                        </div>
-                    </div>
+                    <ChatInterface />
                 </div>
             </main>
         </div>
