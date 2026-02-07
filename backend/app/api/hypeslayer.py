@@ -83,11 +83,11 @@ async def parse_entities_endpoint(request: ParseEntitiesRequest):
 # ==================== Phase 2: Analysis Engine ====================
 
 @router.post("/verify-claim")
-async def verify_claim_endpoint(request: VerifyClaimRequest):
+async def verify_claim_endpoint(request: VerifyClaimRequest, asset_type: str = "stock"):
     """
-    Verify a financial claim against real market data from yfinance.
+    Verify a financial claim against real market data.
     """
-    result = verify_claim(request.ticker, request.claim, request.claim_type)
+    result = verify_claim(request.ticker, request.claim, request.claim_type, asset_type)
     return result
 
 
@@ -131,7 +131,7 @@ async def verify_chain_endpoint(request: VerifyChainRequest):
     
     # Answer using real data
     try:
-        claim_verification = verify_claim(request.ticker, request.claim, "general")
+        claim_verification = verify_claim(request.ticker, request.claim, "general", "stock")
         real_data = claim_verification.get("real_data", {})
         
         answers = [
@@ -259,7 +259,8 @@ async def analyze_video_complete(request: FullAnalysisRequest):
         verification_result = verify_claim(
             ticker=ticker,
             claim=entity_result.get("claim", ""),
-            claim_type=entity_result.get("claim_type", "general")
+            claim_type=entity_result.get("claim_type", "general"),
+            asset_type=entity_result.get("asset", {}).get("type", "stock")
         )
         
         deliberation_log.append({
