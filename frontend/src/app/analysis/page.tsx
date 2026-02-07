@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Search, Download, TrendingUp, DollarSign, Activity, PieChart, AlertTriangle } from 'lucide-react';
+import PriceChart from '../../components/PriceChart';
 
 const StockAnalysis: React.FC = () => {
     const [symbol, setSymbol] = useState('');
@@ -112,6 +113,11 @@ const StockAnalysis: React.FC = () => {
 
                         {/* Grid Metrics */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {/* Price Chart */}
+                            <div className="lg:col-span-3">
+                                <PriceChart data={data.historical_prices} symbol={data.symbol} />
+                            </div>
+
                             {/* Valuation */}
                             <MetricCard title="Valuation" icon={<DollarSign size={20} />} metrics={data.valuation_metrics} color="text-blue-400" />
                             {/* Profitability */}

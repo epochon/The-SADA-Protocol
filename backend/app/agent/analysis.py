@@ -52,6 +52,7 @@ class StockAnalysisAgent:
                 'growth_metrics': self._get_growth_metrics(stock),
                 'dividend_info': self._get_dividend_info(stock),
                 'price_performance': self._get_price_performance(stock),
+                'historical_prices': self._get_historical_prices(stock),
                 'analyst_info': self._get_analyst_info(stock),
                 'risk_metrics': self._get_risk_metrics(stock)
             }
@@ -157,8 +158,27 @@ class StockAnalysisAgent:
                         performance[period_name] = "N/A"
             
             return performance
+            return performance
         except:
             return {}
+
+    def _get_historical_prices(self, stock):
+        """Get 1 year historical price data for charting"""
+        try:
+            hist = stock.history(period="1y")
+            if hist.empty:
+                return []
+            
+            # Format for frontend chart: list of {date, price}
+            chart_data = []
+            for date, row in hist.iterrows():
+                chart_data.append({
+                    "Date": date.strftime("%Y-%m-%d"),
+                    "Close": float(row['Close']),
+                })
+            return chart_data
+        except Exception as e:
+            return []
     
     def _get_analyst_info(self, stock):
         """Get analyst recommendations and targets"""
