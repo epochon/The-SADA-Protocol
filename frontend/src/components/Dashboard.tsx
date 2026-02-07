@@ -7,9 +7,10 @@ import PriceChart from './PriceChart';
 import RiskProfileQuestionnaire from './RiskProfileQuestionnaire';
 import StockAnalysisView from './StockAnalysisView';
 import HypeSlayerView from './HypeSlayerView';
+import DasAIView from './DasAIView';
 
 const Dashboard: React.FC = () => {
-    const [view, setView] = useState<'dashboard' | 'risk-profiler' | 'analysis' | 'hypeslayer'>('hypeslayer');
+    const [view, setView] = useState<'dashboard' | 'risk-profiler' | 'analysis' | 'hypeslayer' | 'das-ai'>('hypeslayer');
     const [riskProfile, setRiskProfile] = useState<any>(null);
 
     useEffect(() => {
@@ -56,6 +57,12 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="flex items-center space-x-1">
                     <button
+                        onClick={() => setView('das-ai')}
+                        className={`px-4 py-2 text-sm font-medium transition-all rounded-lg ${view === 'das-ai' ? 'text-white bg-zinc-800/50' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
+                    >
+                        Das AI
+                    </button>
+                    <button
                         onClick={() => setView('hypeslayer')}
                         className={`px-4 py-2 text-sm font-medium transition-all rounded-lg ${view === 'hypeslayer' ? 'text-white bg-zinc-800/50' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
                     >
@@ -90,6 +97,12 @@ const Dashboard: React.FC = () => {
 
             {/* Main Content Areas */}
             <main className="flex-1 p-6 overflow-y-auto relative bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-zinc-900/50 via-zinc-950 to-zinc-950">
+                {view === 'das-ai' && (
+                    <div className="h-full">
+                        <DasAIView />
+                    </div>
+                )}
+
                 {view === 'hypeslayer' && (
                     <div className="h-full">
                         <HypeSlayerView />

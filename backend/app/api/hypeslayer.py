@@ -22,6 +22,9 @@ from app.hype_slayer.risk_profiler import (
     RiskProfile
 )
 
+# Cross-Verification System
+from app.verification.cross_verification import cross_verification_engine
+
 router = APIRouter()
 
 
@@ -57,6 +60,12 @@ class BullshitScoreRequest(BaseModel):
 
 class FullAnalysisRequest(BaseModel):
     video_url: str = Field(..., description="YouTube video URL for full analysis")
+
+
+class CrossVerifyRequest(BaseModel):
+    """Request for cross-verification pipeline."""
+    transcript: str = Field(..., description="Video transcript text to verify")
+    video_url: Optional[str] = Field(None, description="Optional video URL for context")
 
 
 # ==================== Phase 1: Data Ingestion ====================
@@ -547,6 +556,34 @@ async def test_deliberation_engine(scenario: str = "easy"):
             for log in deliberation_log
         ]
     }
+
+
+# ==================== Cross-Verification System ====================
+
+@router.post("/cross-verify")
+async def cross_verify_endpoint(request: CrossVerifyRequest):
+    """
+    MULTI-API CROSS-VERIFICATION PIPELINE
+    
+    Executes comprehensive verification using:
+    - LLM Consensus (OpenAI ↔ Groq dual validation)
+    - Market Data Triangulation (yfinance ↔ Alpha Vantage)
+    - News Validation (Tavily search + OpenAI analysis)
+    
+    Returns decision (VERIFY/REFUSE) with confidence score and evidence.
+    """
+    try:
+        result = await cross_verification_engine.execute_full_verification(
+            transcript=request.transcript,
+            video_url=request.video_url
+        )
+        return result
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cross-verification failed: {str(e)}"
+        )
 
 
 # ==================== Health Check ====================
