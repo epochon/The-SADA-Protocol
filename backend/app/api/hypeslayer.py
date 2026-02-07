@@ -1,300 +1,369 @@
 """
-HypeSlayer API Endpoints
-Implements all 9 backend services for the Financial Reality Check Agent
+HypeSlayer API Routes
+All endpoints for the Financial Reality Check Agent
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, HttpUrl
-from typing import Optional, Literal, List
-from youtube_transcript_api import YouTubeTranscriptApi
-from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import yfinance as yf
-import re
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
 
-# Import HypeSlayer LLM (will be initialized when first used)
-from app.agent.hypeslayer_llm import ExtractedEntity
+# Import all HypeSlayer services
+from app.hype_slayer.transcript import fetch_transcript
+from app.hype_slayer.entity_parser import parse_entities
+from app.hype_slayer.fact_checker import verify_claim, get_quarterly_data
+from app.hype_slayer.sentiment import analyze_sentiment
+from app.hype_slayer.decision_gate import calculate_confidence, make_final_decision
+from app.hype_slayer.bullshit_detector import calculate_bullshit_score, quick_ticker_check, is_known_scam_pattern
 
 router = APIRouter()
 
-# Pydantic Models
-class VideoRequest(BaseModel):
-    video_url: str
 
-class TranscriptResponse(BaseModel):
-    transcript: str
-    video_id: str
-    status: str
+# ==================== Pydantic Models ====================
 
-class EntityRequest(BaseModel):
-    transcript: str
+class VideoIngestRequest(BaseModel):
+    video_url: str = Field(..., description="YouTube video URL")
+
+class ParseEntitiesRequest(BaseModel):
+    transcript: str = Field(..., description="Video transcript text")
 
 class VerifyClaimRequest(BaseModel):
-    ticker: str
-    claim: str
-    claim_type: str
+    ticker: str = Field(..., description="Stock/crypto ticker symbol")
+    claim: str = Field(..., description="The financial claim to verify")
+    claim_type: str = Field("general", description="Type: price_prediction, revenue, earnings, growth, general")
 
 class SentimentRequest(BaseModel):
-    text: str
-
-class SentimentResponse(BaseModel):
-    sentiment_score: float
-    hype_level: str
-    hype_penalty: int
-    emotional_intensity: str
+    text: str = Field(..., description="Text to analyze for sentiment/hype")
 
 class ConfidenceRequest(BaseModel):
-    evidence_quality: float
-    data_completeness: float
-    risk_penalty: int
-    hype_penalty: int
+    evidence_quality: float = Field(..., ge=0, le=1)
+    data_completeness: float = Field(..., ge=0, le=1)
+    discrepancy_score: int = Field(..., ge=0, le=100)
+    hype_penalty: int = Field(..., ge=0, le=100)
 
-class ConfidenceResponse(BaseModel):
-    confidence_score: float
-    decision: Literal["REFUSE", "VERIFY"]
-    threshold: int
-    reasoning: List[str]
+class VerifyChainRequest(BaseModel):
+    claim: str = Field(..., description="The claim to verify")
+    ticker: str = Field(..., description="Ticker symbol")
 
 class BullshitScoreRequest(BaseModel):
-    ticker: str
-    data_availability: bool
+    ticker: str = Field(..., description="Ticker to check")
+    claimed_price: Optional[float] = Field(None, description="Optional claimed price")
 
-class BullshitScoreResponse(BaseModel):
-    bullshit_score: int
-    reason: str
-    auto_refuse: bool
+class FullAnalysisRequest(BaseModel):
+    video_url: str = Field(..., description="YouTube video URL for full analysis")
 
 
-# Helper Functions
-def extract_video_id(url: str) -> Optional[str]:
-    """Extract YouTube video ID from URL"""
-    patterns = [
-        r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)',
-        r'youtube\.com\/embed\/([^&\n?#]+)',
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
+# ==================== Phase 1: Data Ingestion ====================
 
-
-# Endpoint 1: Transcript Fetcher
-@router.post("/ingest-video", response_model=TranscriptResponse)
-async def ingest_video(request: VideoRequest):
+@router.post("/ingest-video")
+async def ingest_video(request: VideoIngestRequest):
     """
-    Extract transcript from YouTube video
+    Fetch and extract transcript from a YouTube video.
     """
-    try:
-        video_id = extract_video_id(request.video_url)
-        if not video_id:
-            raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-        
-        # Fetch transcript
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
-        transcript = " ".join([entry['text'] for entry in transcript_list])
-        
-        return TranscriptResponse(
-            transcript=transcript,
-            video_id=video_id,
-            status="success"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch transcript: {str(e)}")
+    result = fetch_transcript(request.video_url)
+    return result
 
 
-# Endpoint 2: Entity Parser
-@router.post("/parse-entities", response_model=ExtractedEntity)
-async def parse_entities(request: EntityRequest):
+@router.post("/parse-entities")
+async def parse_entities_endpoint(request: ParseEntitiesRequest):
     """
-    Extract financial entities using Groq LLM
+    Extract financial entities (ticker, claim, timeline) from transcript.
+    Implements EPISTEMIC REFUSAL if no clear ticker detected.
     """
-    try:
-        from app.agent.hypeslayer_llm import hypeslayer_llm
-        result = hypeslayer_llm.extract_entities(request.transcript)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Entity extraction failed: {str(e)}")
+    result = parse_entities(request.transcript)
+    return result
 
 
-# Endpoint 3: Fact-Checker (Simplified)
+# ==================== Phase 2: Analysis Engine ====================
+
 @router.post("/verify-claim")
-async def verify_claim(request: VerifyClaimRequest):
+async def verify_claim_endpoint(request: VerifyClaimRequest):
     """
-    Verify financial claims against real market data
+    Verify a financial claim against real market data from yfinance.
     """
+    result = verify_claim(request.ticker, request.claim, request.claim_type)
+    return result
+
+
+@router.post("/analyze-sentiment")
+async def analyze_sentiment_endpoint(request: SentimentRequest):
+    """
+    Analyze text for sentiment and hype indicators using VADER.
+    Returns hype level (LOW/MEDIUM/HIGH/EXTREME) and penalty score.
+    """
+    result = analyze_sentiment(request.text)
+    return result
+
+
+@router.post("/calculate-confidence")
+async def calculate_confidence_endpoint(request: ConfidenceRequest):
+    """
+    Calculate final confidence score and make REFUSE/VERIFY decision.
+    
+    Formula: Score = ((Evidence + Completeness) * 50) - (Discrepancy + Hype)
+    """
+    result = calculate_confidence(
+        evidence_quality=request.evidence_quality,
+        data_completeness=request.data_completeness,
+        discrepancy_score=request.discrepancy_score,
+        hype_penalty=request.hype_penalty
+    )
+    return result
+
+
+@router.post("/verify-chain")
+async def verify_chain_endpoint(request: VerifyChainRequest):
+    """
+    Chain of Verification (CoVe) - Generate verification questions and answers.
+    """
+    # Generate verification questions based on claim
+    verification_questions = [
+        f"What is the current market price of {request.ticker}?",
+        f"What do analysts recommend for {request.ticker}?",
+        f"What are the recent financial metrics for {request.ticker}?"
+    ]
+    
+    # Answer using real data
     try:
-        stock = yf.Ticker(request.ticker)
-        info = stock.info
+        claim_verification = verify_claim(request.ticker, request.claim, "general")
+        real_data = claim_verification.get("real_data", {})
         
-        # Get relevant data based on claim type
-        real_data = {
-            "current_price": info.get("currentPrice"),
-            "market_cap": info.get("marketCap"),
-            "pe_ratio": info.get("trailingPE"),
-            "revenue": info.get("totalRevenue"),
-        }
+        answers = [
+            f"Current price: ${real_data.get('current_price', 'N/A')}",
+            f"Analyst recommendation: {real_data.get('recommendation', 'N/A')} (target: ${real_data.get('target_mean_price', 'N/A')})",
+            f"P/E Ratio: {real_data.get('pe_ratio', 'N/A')}, Market Cap: ${real_data.get('market_cap', 'N/A')}"
+        ]
         
-        # Simple discrepancy detection (can be enhanced)
-        evidence_quality = 0.7 if real_data["current_price"] else 0.0
+        # Detect discrepancies
+        discrepancies = claim_verification.get("discrepancy_details", [])
         
         return {
-            "verification_status": "verified" if evidence_quality > 0.5 else "discrepancy",
-            "real_data": real_data,
-            "discrepancy_score": 0 if evidence_quality > 0.5 else 85,
-            "evidence_quality": evidence_quality
+            "verification_questions": verification_questions,
+            "answers": answers,
+            "discrepancies": discrepancies,
+            "verification_status": claim_verification.get("verification_status"),
+            "real_data_summary": real_data
         }
+        
     except Exception as e:
         return {
-            "verification_status": "failed",
-            "real_data": {},
-            "discrepancy_score": 100,
-            "evidence_quality": 0.0,
+            "verification_questions": verification_questions,
+            "answers": None,
+            "discrepancies": [f"Error fetching data: {str(e)}"],
             "error": str(e)
         }
 
 
-# Endpoint 4: Hype Detector
-@router.post("/analyze-sentiment", response_model=SentimentResponse)
-async def analyze_sentiment(request: SentimentRequest):
+# ==================== Phase 3: Monitoring & Detection ====================
+
+@router.post("/bullshit-score")
+async def bullshit_score_endpoint(request: BullshitScoreRequest):
     """
-    Analyze sentiment using VADER
+    Calculate deterministic bullshit score (NO LLM).
+    Hard-coded rules for detecting obvious scams.
     """
-    analyzer = SentimentIntensityAnalyzer()
-    scores = analyzer.polarity_scores(request.text)
-    
-    compound = scores['compound']
-    
-    # Determine hype level
-    if compound > 0.8:
-        hype_level = "EXTREME"
-        hype_penalty = 35
-    elif compound > 0.5:
-        hype_level = "HIGH"
-        hype_penalty = 25
-    elif compound > 0.2:
-        hype_level = "MODERATE"
-        hype_penalty = 10
-    else:
-        hype_level = "LOW"
-        hype_penalty = 0
-    
-    emotional_intensity = "high" if abs(compound) > 0.6 else "moderate" if abs(compound) > 0.3 else "low"
-    
-    return SentimentResponse(
-        sentiment_score=compound,
-        hype_level=hype_level,
-        hype_penalty=hype_penalty,
-        emotional_intensity=emotional_intensity
-    )
+    result = calculate_bullshit_score(request.ticker, request.claimed_price)
+    return result
 
 
-# Endpoint 5: Decision Gate
-@router.post("/calculate-confidence", response_model=ConfidenceResponse)
-async def calculate_confidence(request: ConfidenceRequest):
-    """
-    Calculate confidence score and make REFUSE/VERIFY decision
-    """
-    # Formula: Score = (Evidence_Quality + Data_Completeness) - (Risk_Penalty + Hype_Penalty)
-    score = (request.evidence_quality * 100 + request.data_completeness * 100) - (request.risk_penalty + request.hype_penalty)
-    
-    threshold = 50
-    decision = "VERIFY" if score >= threshold else "REFUSE"
-    
-    reasoning = []
-    if request.evidence_quality < 0.5:
-        reasoning.append("Low evidence quality detected")
-    if request.hype_penalty > 20:
-        reasoning.append("High emotional hype detected")
-    if score < threshold:
-        reasoning.append(f"Confidence score ({score:.1f}) below threshold ({threshold})")
-    
-    return ConfidenceResponse(
-        confidence_score=score,
-        decision=decision,
-        threshold=threshold,
-        reasoning=reasoning if reasoning else ["All checks passed"]
-    )
+# ==================== Complete Pipeline ====================
 
-
-# Endpoint 6: Chain of Verification
-@router.post("/verify-chain")
-async def verify_chain(claim: str, ticker: str):
+@router.post("/analyze-video")
+async def analyze_video_complete(request: FullAnalysisRequest):
     """
-    Generate verification questions using Groq
+    COMPLETE PIPELINE: Orchestrates all services for full video analysis.
+    This is the main endpoint for the UI.
     """
-    try:
-        from app.agent.hypeslayer_llm import hypeslayer_llm
-        questions = hypeslayer_llm.generate_verification_questions(claim, ticker)
-        
-        # Answer questions using yfinance
-        answers = []
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        # Simple answer generation (can be enhanced)
-        for q in questions:
-            if "price" in q.lower():
-                answers.append(f"Current price: ${info.get('currentPrice', 'N/A')}")
-            elif "revenue" in q.lower():
-                answers.append(f"Revenue: ${info.get('totalRevenue', 'N/A')}")
-            else:
-                answers.append("Data not available")
-        
+    deliberation_log = []
+    
+    # Step 1: Fetch transcript
+    deliberation_log.append({
+        "step": "INGEST",
+        "status": "processing",
+        "message": "Fetching video transcript...",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    transcript_result = fetch_transcript(request.video_url)
+    
+    if transcript_result.get("status") == "error":
         return {
-            "verification_questions": questions,
-            "answers": answers,
-            "discrepancies": []  # Can add logic to detect discrepancies
+            "decision": "REFUSE",
+            "confidence_score": 0,
+            "reason": "Failed to fetch transcript",
+            "transcript": transcript_result,
+            "entities": None,
+            "verification": None,
+            "sentiment": None,
+            "deliberation_log": deliberation_log
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Endpoint 8: Bullshit Score Calculator
-@router.post("/bullshit-score", response_model=BullshitScoreResponse)
-async def calculate_bullshit_score(request: BullshitScoreRequest):
-    """
-    Deterministic bullshit detection
-    """
-    score = 0
-    reason = ""
     
-    if not request.data_availability:
-        score = 100
-        reason = "No market data available for this ticker"
+    deliberation_log.append({
+        "step": "INGEST",
+        "status": "complete",
+        "message": f"Transcript fetched ({transcript_result.get('word_count', 0)} words)",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    # Step 2: Extract entities
+    deliberation_log.append({
+        "step": "PARSE",
+        "status": "processing",
+        "message": "Extracting financial entities...",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    entity_result = parse_entities(transcript_result.get("transcript", ""))
+    
+    deliberation_log.append({
+        "step": "PARSE",
+        "status": "complete",
+        "message": f"Entity extraction: {entity_result.get('status')}",
+        "details": {
+            "asset": entity_result.get("asset"),
+            "claim": entity_result.get("claim")
+        },
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    # Early exit if no entities found
+    if entity_result.get("status") == "refused":
+        return {
+            "decision": "REFUSE",
+            "confidence_score": 0,
+            "reason": entity_result.get("refuse_reason", "Could not identify financial claim"),
+            "transcript": transcript_result,
+            "entities": entity_result,
+            "verification": None,
+            "sentiment": None,
+            "deliberation_log": deliberation_log
+        }
+    
+    # Step 3: Verify claim against real data
+    ticker = entity_result.get("asset", {}).get("ticker") if entity_result.get("asset") else None
+    
+    if ticker:
+        deliberation_log.append({
+            "step": "VERIFY",
+            "status": "processing",
+            "message": f"Verifying claims against {ticker} market data...",
+            "timestamp": datetime.now().isoformat()
+        })
+        
+        verification_result = verify_claim(
+            ticker=ticker,
+            claim=entity_result.get("claim", ""),
+            claim_type=entity_result.get("claim_type", "general")
+        )
+        
+        deliberation_log.append({
+            "step": "VERIFY",
+            "status": "complete",
+            "message": f"Verification: {verification_result.get('verification_status')}",
+            "details": {
+                "discrepancy_score": verification_result.get("discrepancy_score"),
+                "evidence_quality": verification_result.get("evidence_quality")
+            },
+            "timestamp": datetime.now().isoformat()
+        })
     else:
-        try:
-            stock = yf.Ticker(request.ticker)
-            info = stock.info
-            
-            if not info.get('currentPrice'):
-                score += 80
-                reason = "Unknown or invalid ticker"
-            
-            # Check for extreme price movements (if historical data available)
-            hist = stock.history(period="1mo")
-            if not hist.empty:
-                price_change = ((hist['Close'].iloc[-1] - hist['Close'].iloc[0]) / hist['Close'].iloc[0]) * 100
-                if abs(price_change) > 1000:
-                    score += 50
-                    reason += " | Extreme price deviation detected"
-        except:
-            score = 100
-            reason = "Failed to fetch market data"
+        verification_result = {
+            "verification_status": "no_ticker",
+            "discrepancy_score": 50,
+            "evidence_quality": 0.0
+        }
     
-    return BullshitScoreResponse(
-        bullshit_score=min(score, 100),
-        reason=reason if reason else "Ticker appears legitimate",
-        auto_refuse=score >= 80
+    # Step 4: Analyze sentiment/hype
+    deliberation_log.append({
+        "step": "SENTIMENT",
+        "status": "processing",
+        "message": "Analyzing sentiment and hype levels...",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    sentiment_result = analyze_sentiment(transcript_result.get("transcript", ""))
+    
+    deliberation_log.append({
+        "step": "SENTIMENT",
+        "status": "complete",
+        "message": f"Hype level: {sentiment_result.get('hype_level')}",
+        "details": {
+            "hype_penalty": sentiment_result.get("hype_penalty"),
+            "sentiment_score": sentiment_result.get("sentiment_score")
+        },
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    # Step 5: Make final decision
+    deliberation_log.append({
+        "step": "DECISION",
+        "status": "processing",
+        "message": "Calculating confidence score...",
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    final_decision = make_final_decision(
+        transcript_result=transcript_result,
+        entity_result=entity_result,
+        verification_result=verification_result,
+        sentiment_result=sentiment_result
     )
+    
+    deliberation_log.append({
+        "step": "DECISION",
+        "status": "complete",
+        "message": f"Final decision: {final_decision.get('decision')}",
+        "details": {
+            "confidence_score": final_decision.get("confidence_score"),
+            "reasoning": final_decision.get("reasoning")
+        },
+        "timestamp": datetime.now().isoformat()
+    })
+    
+    return {
+        "decision": final_decision.get("decision"),
+        "confidence_score": final_decision.get("confidence_score"),
+        "confidence": final_decision,
+        "transcript": transcript_result,
+        "entities": entity_result,
+        "verification": verification_result,
+        "sentiment": sentiment_result,
+        "deliberation_log": deliberation_log
+    }
 
 
-# Health Check
+# ==================== Health Check ====================
+
 @router.get("/health")
 async def health_check():
-    """Check if all services are operational"""
-    services = {
-        "yfinance": "ok",
-        "groq": "ok",  # Will check when first used
-        "vader": "ok"
+    """
+    Enhanced health check with service status.
+    """
+    services = {}
+    
+    # Check yfinance
+    try:
+        test = quick_ticker_check("AAPL")
+        services["yfinance"] = "ok" if test.get("valid") else "degraded"
+    except:
+        services["yfinance"] = "error"
+    
+    # Check OpenAI (basic check, doesn't make API call)
+    import os
+    services["openai"] = "configured" if os.getenv("OPENAI_API_KEY") else "not_configured"
+    
+    # Check sentiment analyzer
+    try:
+        test_sentiment = analyze_sentiment("Test analysis")
+        services["vader"] = "ok"
+    except:
+        services["vader"] = "error"
+    
+    overall_status = "ok" if all(s in ["ok", "configured"] for s in services.values()) else "degraded"
+    
+    return {
+        "status": overall_status,
+        "services": services,
+        "timestamp": datetime.now().isoformat(),
+        "version": "1.0.0-hypeslayer"
     }
-    return {"status": "ok", "services": services}

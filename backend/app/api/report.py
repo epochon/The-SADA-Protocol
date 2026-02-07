@@ -22,40 +22,41 @@ def analyze_stock(symbol: str, exchange: str = "NSE"):
 @router.get("/download/{symbol}")
 def download_excel_report(symbol: str, exchange: str = "NSE", format: str = "excel"):
     """
-    Generate and download a comprehensive financial report.
-    supported formats: excel, csv, text
+    Download a comprehensive stock report in specified format.
+    Supported formats: excel, csv, text
     """
     try:
         agent = StockAnalysisAgent()
         data = agent.analyze_stock(symbol, exchange)
         
-        if not data:
-            return {"error": "Could not fetch data"}
-
-        reporter = ReportGenerator(data)
+        if not data or "error" in data:
+            return {"error": "Could not fetch data for report generation"}
         
-        if format == "csv":
-            zip_io = reporter.generate_csv_zip()
+        generator = ReportGenerator(data)
+        
+        if format == "excel":
+            output = generator.generate_excel_report()
             return StreamingResponse(
-                zip_io,
-                media_type="application/zip",
-                headers={"Content-Disposition": f"attachment; filename={symbol}_{exchange}_Report.zip"}
+                output,
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition": f"attachment; filename={symbol}_report.xlsx"}
             )
         elif format == "text":
-            text_io = reporter.generate_text_report()
+            output = generator.generate_text_report()
             return StreamingResponse(
-                text_io,
-                 media_type="text/plain",
-                headers={"Content-Disposition": f"attachment; filename={symbol}_{exchange}_Report.txt"}
+                output,
+                media_type="text/plain",
+                headers={"Content-Disposition": f"attachment; filename={symbol}_report.txt"}
+            )
+        elif format == "csv":
+            output = generator.generate_csv_zip()
+            return StreamingResponse(
+                output,
+                media_type="application/zip",
+                headers={"Content-Disposition": f"attachment; filename={symbol}_report.zip"}
             )
         else:
-            # Default to Excel
-            excel_io = reporter.generate_excel_report()
-            return StreamingResponse(
-                excel_io,
-                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={"Content-Disposition": f"attachment; filename={symbol}_{exchange}_Report.xlsx"}
-            )
-
+            return {"error": f"Unsupported format: {format}"}
+            
     except Exception as e:
         return {"error": str(e)}
