@@ -156,8 +156,6 @@ class StockAnalysisAgent:
                         performance[period_name] = f"{return_pct:.2f}%"
                     except:
                         performance[period_name] = "N/A"
-            
-            return performance
             return performance
         except:
             return {}
@@ -177,7 +175,9 @@ class StockAnalysisAgent:
                     "Close": float(row['Close']),
                 })
             return chart_data
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError, Exception) as e:
+            # In a production app, use a logger here
+            print(f"Error fetching historical prices: {e}")
             return []
     
     def _get_analyst_info(self, stock):

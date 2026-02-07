@@ -12,7 +12,13 @@ interface PriceChartProps {
 }
 
 const PriceChart: React.FC<PriceChartProps> = ({ data, symbol }) => {
-    if (!data || data.length === 0) return null;
+    if (!data || data.length === 0) {
+        return (
+            <div className="glass-card p-6 rounded-2xl w-full h-[400px] flex items-center justify-center text-zinc-500">
+                No price data available for {symbol}
+            </div>
+        );
+    }
 
     const xData = data.map(d => d.Date);
     const yData = data.map(d => d.Close);
