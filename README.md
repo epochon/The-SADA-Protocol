@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # The SADA Protocol (DAS)
 
 **The SADA Protocol (DAS)** is an advanced AI Agent designed to function as a personal financial advisor. It combines the analytical power of large language models with real-time financial data to provide actionable insights, portfolio management, and financial planning.
@@ -54,7 +53,3 @@
     pip install -r requirements.txt
     uvicorn app.main:app --reload
     ```
-=======
-# The-SADA-Protocol
-SS
->>>>>>> a8bf750172a4f5a9e20d9a7bd6ab6b27dbfdaa15
