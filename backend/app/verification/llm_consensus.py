@@ -48,6 +48,7 @@ Respond ONLY in this JSON format:
     async def extract_with_consensus(self, transcript: str) -> Dict[str, Any]:
         """
         Cross-check entity extraction between OpenAI and Groq.
+        Now handles general questions and short inputs more gracefully.
         
         Returns:
             {
@@ -59,12 +60,15 @@ Respond ONLY in this JSON format:
                 "discrepancies": List[str]
             }
         """
-        if len(transcript.strip()) < 50:
+        transcript = transcript.strip()
+        
+        # Handle very short inputs (but don't reject immediately)
+        if len(transcript) < 10:
             return {
                 "consensus_reached": False,
                 "confidence": 0.0,
                 "decision": "REFUSE",
-                "reason": "Transcript too short for meaningful analysis"
+                "reason": "Please provide more detail for analysis"
             }
         
         # Truncate for API limits
@@ -75,21 +79,33 @@ Respond ONLY in this JSON format:
             return {
                 "consensus_reached": False,
                 "confidence": 0.0,
-                "decision": "REFUSE",
-                "reason": "No LLM API keys configured"
+                "decision": "REFUSE", 
+                "reason": "No LLM API keys configured - please set OPENAI_API_KEY or GROQ_API_KEY in backend/.env"
             }
         
-        # If only one client available, use it (no consensus possible)
+        # If only one client available, use it (no consensus possible but still useful)
         if not self.openai_client or not self.groq_client:
             single_result = await self._extract_single(truncated)
+            
+            # Handle extraction errors
+            if single_result.get("error"):
+                return {
+                    "consensus_reached": False,
+                    "confidence": 0.0,
+                    "decision": "REFUSE",
+                    "reason": f"LLM API error: {single_result.get('error')}"
+                }
+            
             return {
                 "consensus_reached": True,  # Single source fallback
                 "single_source": True,
                 "agreed_ticker": single_result.get("ticker"),
+                "agreed_claim": single_result.get("claim"),
+                "agreed_timeline": single_result.get("timeline"),
                 "primary_result": single_result,
                 "fallback_result": None,
-                "confidence": single_result.get("confidence", 0.5) * 0.7,  # Penalize single source
-                "discrepancies": ["Single LLM source - no cross-validation possible"]
+                "confidence": single_result.get("confidence", 0.5) * 0.8,  # Light penalty for single source
+                "discrepancies": ["Single LLM source - using without cross-validation"]
             }
         
         # Extract with both LLMs concurrently
@@ -100,13 +116,49 @@ Respond ONLY in this JSON format:
             primary_task, fallback_task, return_exceptions=True
         )
         
-        # Handle extraction failures
+        # Handle extraction failures - if one fails, use the other
         if isinstance(primary_result, Exception):
             primary_result = {"error": str(primary_result), "ticker": None}
         if isinstance(fallback_result, Exception):
             fallback_result = {"error": str(fallback_result), "ticker": None}
         
-        # Compare results
+        # If both failed, report error
+        if primary_result.get("error") and fallback_result.get("error"):
+            return {
+                "consensus_reached": False,
+                "confidence": 0.0,
+                "decision": "REFUSE",
+                "reason": f"Both LLM APIs failed. OpenAI: {primary_result.get('error')}, Groq: {fallback_result.get('error')}"
+            }
+        
+        # If one failed, use the other (with penalty)
+        if primary_result.get("error"):
+            return {
+                "consensus_reached": True,
+                "single_source": True,
+                "agreed_ticker": fallback_result.get("ticker"),
+                "agreed_claim": fallback_result.get("claim"),
+                "agreed_timeline": fallback_result.get("timeline"),
+                "primary_result": fallback_result,
+                "fallback_result": None,
+                "confidence": fallback_result.get("confidence", 0.5) * 0.7,
+                "discrepancies": [f"OpenAI failed, using Groq only: {primary_result.get('error')}"]
+            }
+        
+        if fallback_result.get("error"):
+            return {
+                "consensus_reached": True,
+                "single_source": True,
+                "agreed_ticker": primary_result.get("ticker"),
+                "agreed_claim": primary_result.get("claim"),
+                "agreed_timeline": primary_result.get("timeline"),
+                "primary_result": primary_result,
+                "fallback_result": None,
+                "confidence": primary_result.get("confidence", 0.5) * 0.7,
+                "discrepancies": [f"Groq failed, using OpenAI only: {fallback_result.get('error')}"]
+            }
+        
+        # Compare results from both LLMs
         return self._compare_extractions(primary_result, fallback_result)
     
     async def _extract_single(self, transcript: str) -> Dict[str, Any]:
@@ -150,6 +202,7 @@ Respond ONLY in this JSON format:
     def _compare_extractions(self, primary: Dict, fallback: Dict) -> Dict[str, Any]:
         """
         Compare extraction results and determine consensus.
+        More forgiving - allows general claims without specific tickers.
         """
         discrepancies = []
         
@@ -157,10 +210,18 @@ Respond ONLY in this JSON format:
         primary_ticker = (primary.get("ticker") or "").upper().strip()
         fallback_ticker = (fallback.get("ticker") or "").upper().strip()
         
-        # Ticker matching
-        ticker_match = primary_ticker == fallback_ticker
+        # Remove common non-ticker values
+        for invalid in ["", "NULL", "NONE", "N/A", "GENERAL"]:
+            if primary_ticker == invalid:
+                primary_ticker = ""
+            if fallback_ticker == invalid:
+                fallback_ticker = ""
         
-        if not ticker_match and primary_ticker and fallback_ticker:
+        # Ticker matching - only strict if BOTH found tickers
+        both_have_tickers = primary_ticker and fallback_ticker
+        ticker_match = primary_ticker == fallback_ticker if both_have_tickers else True
+        
+        if not ticker_match:
             discrepancies.append(
                 f"Ticker mismatch: OpenAI='{primary_ticker}' vs Groq='{fallback_ticker}'"
             )
@@ -168,50 +229,69 @@ Respond ONLY in this JSON format:
         # Claim similarity using fuzzy matching
         primary_claim = primary.get("claim", "") or ""
         fallback_claim = fallback.get("claim", "") or ""
-        claim_similarity = SequenceMatcher(
-            None, 
-            primary_claim.lower(), 
-            fallback_claim.lower()
-        ).ratio()
         
-        if claim_similarity < 0.5:
+        # Handle empty claims
+        if not primary_claim and not fallback_claim:
+            claim_similarity = 0.5  # Neutral
+        elif not primary_claim or not fallback_claim:
+            claim_similarity = 0.6  # One has claim, slight penalty
+        else:
+            claim_similarity = SequenceMatcher(
+                None, 
+                primary_claim.lower(), 
+                fallback_claim.lower()
+            ).ratio()
+        
+        if claim_similarity < 0.4:
             discrepancies.append(f"Claim similarity low: {claim_similarity:.2f}")
         
-        # Calculate confidence
-        confidence = 0.0
-        if ticker_match and primary_ticker:
-            confidence += 0.5
-        if claim_similarity > 0.7:
-            confidence += 0.3
+        # Calculate confidence - be more generous
+        confidence = 0.3  # Base confidence for reaching this point
+        
+        if both_have_tickers and ticker_match:
+            confidence += 0.4  # Strong agreement
+        elif primary_ticker or fallback_ticker:
+            confidence += 0.2  # At least one ticker found
+        else:
+            confidence += 0.15  # General claim, no ticker - still valid
+        
+        if claim_similarity > 0.6:
+            confidence += 0.2
+        elif claim_similarity > 0.4:
+            confidence += 0.1
+        
         if primary.get("confidence") and fallback.get("confidence"):
             avg_llm_conf = (primary["confidence"] + fallback["confidence"]) / 2
-            confidence += avg_llm_conf * 0.2
+            confidence += avg_llm_conf * 0.15
         
-        # CRITICAL: If tickers don't match, REFUSE
-        if not ticker_match and primary_ticker and fallback_ticker:
+        # Only refuse if tickers ACTIVELY disagree (both found but different)
+        if not ticker_match and both_have_tickers:
+            # Still provide the data but with low confidence
             return {
                 "consensus_reached": False,
                 "primary_result": primary,
                 "fallback_result": fallback,
-                "agreed_ticker": None,
-                "confidence": 0.0,
+                "agreed_ticker": primary_ticker,  # Use primary as fallback
+                "agreed_claim": primary_claim or fallback_claim,
+                "confidence": 0.3,  # Low but not zero
                 "decision": "REFUSE",
-                "reason": f"LLM disagreement: OpenAI detected '{primary_ticker}' but Groq detected '{fallback_ticker}'",
+                "reason": f"LLM disagreement on ticker: OpenAI='{primary_ticker}' vs Groq='{fallback_ticker}'. Using OpenAI's interpretation with reduced confidence.",
                 "discrepancies": discrepancies
             }
         
-        # Use whichever ticker was found
+        # Use whichever ticker was found (or none if general claim)
         agreed_ticker = primary_ticker or fallback_ticker or None
+        best_claim = primary_claim if len(primary_claim) > len(fallback_claim) else fallback_claim
         
         return {
-            "consensus_reached": ticker_match or bool(agreed_ticker),
+            "consensus_reached": True,  # More forgiving - proceed with available data
             "primary_result": primary,
             "fallback_result": fallback,
             "agreed_ticker": agreed_ticker,
-            "agreed_claim": primary_claim or fallback_claim,
+            "agreed_claim": best_claim or primary_claim or fallback_claim,
             "agreed_timeline": primary.get("timeline") or fallback.get("timeline"),
             "claim_similarity": claim_similarity,
-            "confidence": confidence,
+            "confidence": min(confidence, 1.0),
             "discrepancies": discrepancies
         }
 

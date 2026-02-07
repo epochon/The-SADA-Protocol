@@ -69,6 +69,7 @@ const DasAIView: React.FC = () => {
   }, [promptValue]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [response, setResponse] = useState<any>(null);
 
   const handleSubmit = async () => {
@@ -76,25 +77,26 @@ const DasAIView: React.FC = () => {
 
     setIsLoading(true);
     setResponse(null);
-    const input = promptValue;
+    const input = promptValue.trim();
     setPromptValue(''); // Clear input immediately
 
     try {
       console.log('Submitting prompt:', input);
 
-      let endpoint = 'http://localhost:8000/hypeslayer/cross-verify'; // Default to cross-verify
-      let body: any = { transcript: input };
+      let endpoint: string;
+      let body: any;
 
-      // Smart routing
+      // Smart routing based on input type
       if (input.includes('youtube.com') || input.includes('youtu.be')) {
-        // It's a video URL - we'd ideally ingest first, but for now we'll send it as video_url if the endpoint supports it
-        // The cross-verify endpoint expects transcript, let's see if we can use it directly or need a different flow.
-        // Actually, let's just stick to cross-verify for text for now to be safe, 
-        // OR if it's a verify-claim request (short text)
-        body = { transcript: input, video_url: input.includes('http') ? input : undefined };
-      } else if (input.length < 50 && (input.includes('$') || /^[A-Z]{1,5}$/.test(input))) {
-        // Likely a ticker request - verify claim
-        // endpoint = 'http://localhost:8000/hypeslayer/verify-claim';
+        // YouTube URL → Full Video Analysis Pipeline
+        setLoadingMessage('📹 Fetching video transcript and analyzing...');
+        endpoint = 'http://localhost:8000/hypeslayer/analyze-video';
+        body = { video_url: input };
+      } else {
+        // Text claim → Cross-Verification Pipeline
+        setLoadingMessage('🔍 Cross-verifying claim against multiple sources...');
+        endpoint = 'http://localhost:8000/hypeslayer/cross-verify';
+        body = { transcript: input };
       }
 
       const res = await fetch(endpoint, {
@@ -103,20 +105,27 @@ const DasAIView: React.FC = () => {
         body: JSON.stringify(body)
       });
 
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`API Error ${res.status}: ${errorText}`);
+      }
+
       const data = await res.json();
-      console.log('Response:', data);
+      console.log('Full Response:', data);
       setResponse(data);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting prompt:', error);
       setResponse({
         decision: 'ERROR',
         confidence_score: 0,
-        claim: 'Network error or backend unreachable',
-        reason: 'Please ensure backend is running at http://localhost:8000'
+        entities: { claim: input },
+        reason: error.message || 'Failed to connect to backend',
+        error_details: 'Please ensure backend is running at http://localhost:8000'
       });
     } finally {
       setIsLoading(false);
+      setLoadingMessage('');
     }
   };
 
@@ -207,7 +216,7 @@ const DasAIView: React.FC = () => {
       <header className="absolute top-10 left-10 z-50 select-none">
         <h1 className="text-5xl font-bold text-white tracking-tight mb-2">Das AI</h1>
         <p className="text-[11px] text-white/70 tracking-wide leading-relaxed max-w-[200px]">
-          by THE SADA PROTOCOL<br />
+          by DAS THE HYPESLAYER<br />
           Advanced AI reasoning<br />
           with deep research, coding<br />
           capabilities and enhanced<br />
@@ -328,54 +337,177 @@ const DasAIView: React.FC = () => {
 
       {/* Response Overlay */}
       {(response || isLoading) && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[60%] w-[600px] max-w-[90vw] z-40">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[55%] w-[700px] max-w-[95vw] max-h-[80vh] overflow-y-auto z-40 scrollbar-thin scrollbar-thumb-cyan-500/30 scrollbar-track-transparent">
           {isLoading ? (
-            <div className="flex flex-col items-center justify-center animate-pulse">
-              <div className="text-cyan-400 text-xl font-mono mb-2">ACCESSING NEURAL MATRIX...</div>
-              <div className="text-white/50 text-sm">Cross-referencing market data, news, and sentiment</div>
+            <div className="flex flex-col items-center justify-center animate-pulse py-10">
+              <div className="w-16 h-16 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin mb-4"></div>
+              <div className="text-cyan-400 text-xl font-mono mb-2">ANALYZING...</div>
+              <div className="text-white/60 text-sm text-center max-w-md">{loadingMessage || 'Cross-referencing market data, news, and sentiment'}</div>
             </div>
           ) : (
-            <div className="bg-black/80 backdrop-blur-xl border border-cyan-500/30 rounded-2xl p-6 shadow-[0_0_40px_rgba(0,212,255,0.15)] animate-in fade-in zoom-in duration-300">
-              <div className="flex justify-between items-start mb-4">
-                <h2 className={`text-2xl font-bold ${response.decision === 'VERIFY' ? 'text-green-400' : response.decision === 'REFUSE' ? 'text-red-400' : 'text-cyan-400'}`}>
-                  {response.decision || 'ANALYSIS COMPLETE'}
-                </h2>
-                <div className="text-white/80 font-mono text-sm border border-white/10 px-2 py-1 rounded">
-                  CONFIDENCE: {response.confidence_score}%
+            <div className="bg-black/90 backdrop-blur-xl border border-cyan-500/40 rounded-2xl p-6 shadow-[0_0_60px_rgba(0,212,255,0.2)]">
+              {/* Header: Decision + Confidence */}
+              <div className="flex justify-between items-center mb-6 pb-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <div className={`w-4 h-4 rounded-full ${response.decision === 'VERIFY' ? 'bg-green-500' : response.decision === 'REFUSE' ? 'bg-red-500' : 'bg-yellow-500'} animate-pulse`}></div>
+                  <h2 className={`text-3xl font-black tracking-tight ${response.decision === 'VERIFY' ? 'text-green-400' : response.decision === 'REFUSE' ? 'text-red-400' : 'text-yellow-400'}`}>
+                    {response.decision || 'ANALYSIS COMPLETE'}
+                  </h2>
+                </div>
+                <div className="text-right">
+                  <div className="text-white/50 text-xs uppercase tracking-widest mb-1">Confidence</div>
+                  <div className="text-2xl font-mono font-bold text-white">{response.confidence_score || response.confidence?.confidence_score || 0}%</div>
                 </div>
               </div>
 
-              <div className="space-y-4 text-white/90">
-                {response.claim && (
-                  <div className="bg-white/5 p-3 rounded-lg border border-white/5">
-                    <div className="text-xs text-white/50 mb-1 uppercase tracking-wider">Investigated Claim</div>
-                    <div className="italic">"{response.claim}"</div>
+              <div className="space-y-5 text-white/90">
+                {/* Main Reason / Summary */}
+                {(response.reason || response.confidence?.reasoning) && (
+                  <div className="bg-gradient-to-r from-cyan-500/10 to-transparent p-4 rounded-xl border-l-4 border-cyan-500">
+                    <div className="text-xs text-cyan-400 uppercase tracking-widest mb-2 font-semibold">📋 Analysis Summary</div>
+                    <div className="text-lg leading-relaxed">{response.reason || response.confidence?.reasoning}</div>
                   </div>
                 )}
 
-                {response.reason && (
-                  <div className="text-lg leading-relaxed border-l-2 border-cyan-500 pl-4 py-1">
-                    {response.reason}
+                {/* Entities Extracted */}
+                {response.entities && (
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="text-xs text-purple-400 uppercase tracking-widest mb-3 font-semibold">🎯 Extracted Entities</div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {response.entities.asset && (
+                        <div className="bg-purple-500/10 p-3 rounded-lg border border-purple-500/20">
+                          <span className="text-white/50 block text-xs mb-1">Asset</span>
+                          <span className="font-bold text-purple-300">{response.entities.asset.ticker || response.entities.asset}</span>
+                          {response.entities.asset.type && <span className="text-white/40 text-xs ml-2">({response.entities.asset.type})</span>}
+                        </div>
+                      )}
+                      {response.entities.claim && (
+                        <div className="col-span-2 bg-white/5 p-3 rounded-lg border border-white/5">
+                          <span className="text-white/50 block text-xs mb-1">Claimed</span>
+                          <span className="italic text-white/80">"{response.entities.claim}"</span>
+                        </div>
+                      )}
+                      {response.entities.timeline && (
+                        <div className="bg-blue-500/10 p-3 rounded-lg border border-blue-500/20">
+                          <span className="text-white/50 block text-xs mb-1">Timeline</span>
+                          <span className="text-blue-300">{response.entities.timeline}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
-                {/* Verification Layers visualization */}
-                {response.verification_layers && (
-                  <div className="grid grid-cols-3 gap-2 mt-4">
-                    {Object.entries(response.verification_layers).map(([layer, status]: [string, any]) => (
-                      <div key={layer} className={`text-xs p-2 rounded text-center border ${status === 'passed' || (status && status.verdict === 'SUPPORTED') ? 'border-green-500/30 bg-green-500/10 text-green-300' : status === 'failed' || (status && status.verdict === 'CONTRADICTION') ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-white/10 bg-white/5 text-white/50'}`}>
-                        {layer.replace(/_/g, ' ').toUpperCase()}
+                {/* Verification Results */}
+                {response.verification && (
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="text-xs text-green-400 uppercase tracking-widest mb-3 font-semibold">✅ Fact Check Results</div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {response.verification.real_data && (
+                        <>
+                          {response.verification.real_data.current_price && (
+                            <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                              <span className="text-white/50 block text-xs mb-1">Current Price</span>
+                              <span className="font-bold text-green-300 text-lg">${response.verification.real_data.current_price}</span>
+                            </div>
+                          )}
+                          {response.verification.real_data.recommendation && (
+                            <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                              <span className="text-white/50 block text-xs mb-1">Analyst Rating</span>
+                              <span className="font-semibold text-green-300 uppercase">{response.verification.real_data.recommendation}</span>
+                            </div>
+                          )}
+                          {response.verification.real_data.target_mean_price && (
+                            <div className="p-3 bg-white/5 rounded-lg">
+                              <span className="text-white/50 block text-xs mb-1">Target Price</span>
+                              <span className="text-white/80">${response.verification.real_data.target_mean_price}</span>
+                            </div>
+                          )}
+                          {response.verification.real_data.pe_ratio && (
+                            <div className="p-3 bg-white/5 rounded-lg">
+                              <span className="text-white/50 block text-xs mb-1">P/E Ratio</span>
+                              <span className="text-white/80">{response.verification.real_data.pe_ratio.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                      <div className="col-span-2 flex items-center gap-2 mt-2">
+                        <span className="text-white/50 text-xs">Discrepancy Score:</span>
+                        <div className="flex-1 h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${(response.verification.discrepancy_score || 0) > 50 ? 'bg-red-500' : 'bg-green-500'}`}
+                            style={{ width: `${response.verification.discrepancy_score || 0}%` }}
+                          ></div>
+                        </div>
+                        <span className="text-white/70 text-sm font-mono">{response.verification.discrepancy_score || 0}%</span>
                       </div>
-                    ))}
+                    </div>
                   </div>
+                )}
+
+                {/* Sentiment Analysis */}
+                {response.sentiment && (
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="text-xs text-orange-400 uppercase tracking-widest mb-3 font-semibold">🔥 Hype Analysis</div>
+                    <div className="flex items-center gap-4">
+                      <div className={`px-4 py-2 rounded-full font-bold text-sm ${response.sentiment.hype_level === 'EXTREME' ? 'bg-red-500/30 text-red-300 border border-red-500/50' :
+                        response.sentiment.hype_level === 'HIGH' ? 'bg-orange-500/30 text-orange-300 border border-orange-500/50' :
+                          response.sentiment.hype_level === 'MEDIUM' ? 'bg-yellow-500/30 text-yellow-300 border border-yellow-500/50' :
+                            'bg-green-500/30 text-green-300 border border-green-500/50'
+                        }`}>
+                        {response.sentiment.hype_level} HYPE
+                      </div>
+                      <div className="text-white/60 text-sm">
+                        Penalty: <span className="text-orange-400 font-mono">-{response.sentiment.hype_penalty || 0}</span> points
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Transcript Info (for video analysis) */}
+                {response.transcript && response.transcript.word_count && (
+                  <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+                    <div className="text-xs text-blue-400 uppercase tracking-widest mb-2 font-semibold">📹 Video Transcript</div>
+                    <div className="text-sm text-white/60">
+                      Analyzed <span className="text-white font-semibold">{response.transcript.word_count}</span> words from video
+                      {response.transcript.video_id && <span className="ml-2 text-white/40">(ID: {response.transcript.video_id})</span>}
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Details */}
+                {response.error_details && (
+                  <div className="bg-red-500/10 p-4 rounded-xl border border-red-500/30">
+                    <div className="text-xs text-red-400 uppercase tracking-widest mb-2 font-semibold">⚠️ Error</div>
+                    <div className="text-red-300 text-sm">{response.error_details}</div>
+                  </div>
+                )}
+
+                {/* Deliberation Log (Collapsible) */}
+                {response.deliberation_log && response.deliberation_log.length > 0 && (
+                  <details className="bg-white/5 rounded-xl border border-white/10">
+                    <summary className="p-4 cursor-pointer text-xs text-white/50 uppercase tracking-widest hover:text-white/80 transition-colors">
+                      🔬 View Deliberation Process ({response.deliberation_log.length} steps)
+                    </summary>
+                    <div className="px-4 pb-4 space-y-2">
+                      {response.deliberation_log.map((step: any, idx: number) => (
+                        <div key={idx} className="flex items-start gap-3 text-xs">
+                          <div className={`w-2 h-2 rounded-full mt-1.5 ${step.status === 'complete' ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                          <div>
+                            <span className="text-cyan-400 font-semibold">{step.step}:</span>
+                            <span className="text-white/70 ml-2">{step.message}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
                 )}
               </div>
 
               <button
                 onClick={() => setResponse(null)}
-                className="mt-6 w-full py-2 bg-white/5 hover:bg-cyan-500/10 border border-white/10 hover:border-cyan-500/50 rounded-lg text-white/70 hover:text-cyan-400 transition-all text-sm uppercase tracking-widest"
+                className="mt-6 w-full py-3 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 hover:border-cyan-500/60 rounded-xl text-cyan-400 hover:text-cyan-300 transition-all text-sm font-semibold uppercase tracking-widest"
               >
-                Close Analysis
+                ✕ Close Analysis
               </button>
             </div>
           )}

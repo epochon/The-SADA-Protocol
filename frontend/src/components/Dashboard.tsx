@@ -48,10 +48,10 @@ const Dashboard: React.FC = () => {
             <header className="flex items-center justify-between px-6 py-4 glass border-b border-zinc-800 z-10">
                 <div className="flex items-center space-x-2">
                     <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center">
-                        <span className="font-bold text-zinc-950">S</span>
+                        <span className="font-bold text-zinc-950">D</span>
                     </div>
                     <div className="flex flex-col">
-                        <h1 className="text-xl font-bold tracking-tight text-glow leading-none">The SADA Protocol</h1>
+                        <h1 className="text-xl font-bold tracking-tight text-glow leading-none">DAS The HypeSlayer</h1>
                         <span className="text-[10px] text-emerald-500 font-mono tracking-widest uppercase mt-1">AI Financial Agent</span>
                     </div>
                 </div>

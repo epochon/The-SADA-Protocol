@@ -270,20 +270,61 @@ class CrossVerificationEngine:
         details: Dict = None,
         confidence: float = 0.0
     ) -> Dict[str, Any]:
-        """Generate a REFUSE decision response."""
+        """Generate a REFUSE decision response with detailed natural language explanation."""
         elapsed = (datetime.now() - start_time).total_seconds()
         
-        reason_messages = {
-            "LLM_DISAGREEMENT": "Multiple AI models disagree on the content interpretation",
-            "NO_MARKET_DATA": "Unable to verify claim - no market data available",
-            "NEWS_CONTRADICTION": "Recent news sources contradict this claim",
-            "LOW_CONFIDENCE": "Insufficient evidence to verify this claim"
+        # Natural language explanations with helpful guidance
+        reason_explanations = {
+            "LLM_DISAGREEMENT": {
+                "short": "Unable to reach consensus on content analysis",
+                "detailed": "I analyzed your input using multiple AI models (OpenAI GPT-4 and Groq Llama-3), but they produced different interpretations. This usually happens when the input is ambiguous, contains a general question rather than a specific claim, or lacks sufficient context for financial analysis.",
+                "guidance": "💡 **Tip**: For best results, try providing a specific financial claim to verify, such as:\n• \"Tesla stock will reach $500 by end of year\"\n• \"NVIDIA's revenue grew 200% last quarter\"\n• Paste a YouTube URL of a financial video to analyze",
+                "what_i_can_do": "I'm designed to verify specific financial claims against real market data, not provide investment advice. I cross-reference claims using market prices, analyst ratings, and recent news."
+            },
+            "NO_MARKET_DATA": {
+                "short": "Could not retrieve market data for verification",
+                "detailed": "I attempted to fetch real-time market data from multiple sources (Yahoo Finance and Alpha Vantage) but couldn't retrieve reliable information for the asset mentioned. This could mean the ticker symbol doesn't exist, the market is closed, or there's a temporary data issue.",
+                "guidance": "💡 **Tip**: Make sure you're using valid stock ticker symbols (e.g., AAPL, TSLA, NVDA) or cryptocurrency tickers. I work best with publicly traded assets that have available market data.",
+                "what_i_can_do": "I verify claims by comparing them against live market prices, P/E ratios, analyst recommendations, and price targets from multiple data providers."
+            },
+            "NEWS_CONTRADICTION": {
+                "short": "Recent news contradicts this claim",
+                "detailed": "I searched recent news articles and financial reports about this topic, and the information I found contradicts the claim being made. This is a significant red flag that suggests the claim may be misleading or false.",
+                "guidance": "⚠️ **Caution**: This claim appears to conflict with recent news reports. I recommend doing additional research before making any investment decisions based on this information.",
+                "what_i_can_do": "I cross-reference claims against recent news from Tavily's news API and analyze the sentiment and facts using AI models."
+            },
+            "LOW_CONFIDENCE": {
+                "short": "Insufficient evidence to verify this claim",
+                "detailed": f"After analyzing multiple data sources, I could only achieve {confidence}% confidence in this claim. This is below my verification threshold of 50%, which means there isn't enough supporting evidence to confidently verify or deny the claim.",
+                "guidance": "💡 **Tip**: Low confidence often means the claim is speculative, forward-looking (predicting future prices), or lacks sufficient supporting data. Be cautious with such claims.",
+                "what_i_can_do": "I calculate confidence scores by weighing LLM consensus (20%), market data quality (50%), and news validation (30%)."
+            }
         }
+        
+        explanation = reason_explanations.get(reason, {
+            "short": "Unable to process this request",
+            "detailed": f"An unexpected issue occurred during analysis: {reason}",
+            "guidance": "Please try again with a specific financial claim or YouTube video URL.",
+            "what_i_can_do": "I analyze financial claims using multi-API cross-verification."
+        })
+        
+        # Construct natural language response
+        natural_response = f"""**{explanation['short']}**
+
+{explanation['detailed']}
+
+---
+
+{explanation['guidance']}
+
+**What I Can Do:**
+{explanation['what_i_can_do']}"""
         
         return {
             "decision": "REFUSE",
             "confidence_score": confidence,
-            "reason": reason_messages.get(reason, reason),
+            "reason": natural_response,
+            "reason_short": explanation['short'],
             "reason_code": reason,
             "details": details,
             "verification_layers": {
@@ -292,7 +333,12 @@ class CrossVerificationEngine:
                 "news_validation": "failed" if reason == "NEWS_CONTRADICTION" else "passed"
             },
             "deliberation_log": log,
-            "processing_time_seconds": round(elapsed, 2)
+            "processing_time_seconds": round(elapsed, 2),
+            "suggestions": [
+                "Try a specific claim like: 'AAPL will hit $300 this year'",
+                "Paste a YouTube video URL for full analysis",
+                "Include a ticker symbol like $TSLA or $NVDA"
+            ]
         }
     
     def _generate_verification_response(
@@ -304,7 +350,7 @@ class CrossVerificationEngine:
         log: List[Dict],
         start_time: datetime
     ) -> Dict[str, Any]:
-        """Generate a VERIFY decision response."""
+        """Generate a VERIFY decision response with detailed natural language explanation."""
         elapsed = (datetime.now() - start_time).total_seconds()
         
         # Count sources that agreed
@@ -323,11 +369,45 @@ class CrossVerificationEngine:
             if evidence["news_validation"].get("verdict") == "SUPPORTED":
                 sources_agreed += evidence["news_validation"].get("num_sources", 0)
         
+        # Build natural language summary
+        market_data = evidence.get("market_data", {})
+        news_data = evidence.get("news_validation", {})
+        
+        price_info = ""
+        if market_data.get("yfinance_price"):
+            price_info = f"Current market price is ${market_data['yfinance_price']:.2f}."
+            if market_data.get("target_mean_price"):
+                price_info += f" Analyst target price: ${market_data['target_mean_price']:.2f}."
+        
+        news_info = ""
+        if news_data.get("verdict") == "SUPPORTED":
+            news_info = f"✅ This claim is supported by {news_data.get('num_sources', 0)} recent news sources."
+        elif news_data.get("verdict") == "NEUTRAL":
+            news_info = "📰 No recent news directly confirms or denies this claim."
+        
+        confidence_level = "high" if confidence >= 75 else "moderate" if confidence >= 50 else "low"
+        
+        natural_response = f"""**Claim Verified with {confidence_level} confidence ({confidence}%)**
+
+I analyzed your claim about **{ticker}** using multiple verification layers:
+
+📊 **Market Data Check**: {price_info if price_info else "Market data analyzed successfully."}
+
+{news_info}
+
+🔍 **Cross-Verification Summary**:
+• {sources_agreed} out of {sources_checked} data sources support this claim
+• AI consensus achieved between multiple language models
+• No major contradictions found in recent news
+
+⚠️ **Important**: While I've verified the factual basis of this claim using available data, this is NOT investment advice. Always do your own research and consult a financial advisor before making investment decisions."""
+        
         return {
             "decision": "VERIFY",
             "confidence_score": confidence,
             "ticker": ticker,
             "claim": claim,
+            "reason": natural_response,
             "verification_layers": {
                 "llm_consensus": evidence.get("llm_consensus"),
                 "market_data_triangulation": evidence.get("market_data"),
