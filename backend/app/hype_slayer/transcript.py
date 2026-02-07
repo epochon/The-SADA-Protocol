@@ -11,6 +11,11 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound, 
     VideoUnavailable
 )
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+# Import centralized config and cache
+from app.core.config import settings
+from app.core.cache import transcript_cache
 
 
 def extract_video_id(url: str) -> Optional[str]:
@@ -32,7 +37,7 @@ def extract_video_id(url: str) -> Optional[str]:
 
 def fetch_transcript(video_url: str) -> Dict[str, Any]:
     """
-    Fetch transcript from a YouTube video.
+    Fetch transcript from a YouTube video with caching and timeout.
     
     Args:
         video_url: Full YouTube URL
@@ -57,8 +62,15 @@ def fetch_transcript(video_url: str) -> Dict[str, Any]:
             "error": "Invalid YouTube URL. Could not extract video ID."
         }
     
-    try:
-        # Try to get transcript - prefer English, fall back to auto-generated
+    # Check cache first
+    cache_key = f"transcript:{video_id}"
+    cached = transcript_cache.get(cache_key)
+    if cached:
+        print(f"📦 Transcript Cache HIT for {video_id}")
+        return cached
+    
+    # Fetch with timeout protection
+    def _fetch_inner():
         transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
         
         # Priority: Manual English > Auto-generated English > Any translated
@@ -101,7 +113,27 @@ def fetch_transcript(video_url: str) -> Dict[str, Any]:
             "language": language,
             "word_count": len(full_text.split())
         }
-        
+    
+    # Execute with timeout
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_fetch_inner)
+            result = future.result(timeout=settings.youtube_timeout)
+            
+            # Cache successful results
+            if result.get("status") == "success":
+                transcript_cache.set(cache_key, result)
+                print(f"🔄 Transcript Cache MISS for {video_id} - fetched fresh")
+            
+            return result
+            
+    except FuturesTimeoutError:
+        return {
+            "status": "error",
+            "video_id": video_id,
+            "transcript": None,
+            "error": f"Timeout: YouTube transcript fetch exceeded {settings.youtube_timeout}s"
+        }
     except TranscriptsDisabled:
         return {
             "status": "error",
@@ -123,3 +155,4 @@ def fetch_transcript(video_url: str) -> Dict[str, Any]:
             "transcript": None,
             "error": f"Failed to fetch transcript: {str(e)}"
         }
+

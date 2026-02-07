@@ -6,6 +6,31 @@ Verifies financial claims against real market data using yfinance
 import yfinance as yf
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+# Import centralized config and cache
+from app.core.config import settings
+from app.core.cache import ticker_cache
+
+
+def _fetch_ticker_with_timeout(ticker: str, timeout: int = None) -> Optional[Dict]:
+    """Fetch ticker info with timeout protection."""
+    timeout = timeout or settings.yfinance_timeout
+    
+    def fetch():
+        stock = yf.Ticker(ticker)
+        return stock, stock.info
+    
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(fetch)
+            return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        print(f"⏱️ Timeout fetching {ticker} after {timeout}s")
+        return None, None
+    except Exception as e:
+        print(f"❌ Error fetching {ticker}: {e}")
+        return None, None
 
 
 def verify_claim(ticker: str, claim: str, claim_type: str = "general") -> Dict[str, Any]:
@@ -21,8 +46,19 @@ def verify_claim(ticker: str, claim: str, claim_type: str = "general") -> Dict[s
         dict: Verification result with discrepancy analysis
     """
     try:
-        stock = yf.Ticker(ticker)
-        info = stock.info
+        # Check cache first
+        cache_key = f"ticker_data:{ticker}"
+        cached = ticker_cache.get(cache_key)
+        
+        if cached:
+            stock, info = cached
+            print(f"📦 Cache HIT for {ticker}")
+        else:
+            # Fetch with timeout protection
+            stock, info = _fetch_ticker_with_timeout(ticker)
+            if stock and info:
+                ticker_cache.set(cache_key, (stock, info))
+                print(f"🔄 Cache MISS for {ticker} - fetched fresh")
         
         # Check if we got valid data
         if not info or info.get('regularMarketPrice') is None:
