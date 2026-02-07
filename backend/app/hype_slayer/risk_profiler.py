@@ -56,87 +56,87 @@ class RiskProfileCalculator:
         "C": 3
     }
     
-    # Questions structure (will be populated from uploaded file)
+    # Questions structure with exact user-provided wording
     QUESTIONS = {
         "Q1": {
-            "category": "Financial Stability",
-            "text": "How stable is your income?",
+            "category": "I - YOUR FINANCIAL STABILITY",
+            "text": "How steady is your income?",
             "options": {
-                "A": "Very stable (salaried, government job)",
-                "B": "Somewhat stable (regular business income)",
-                "C": "Unpredictable (freelance, commission-based)"
+                "A": "Very stable",
+                "B": "Somewhat stable",
+                "C": "Unpredictable / volatile"
             }
         },
         "Q2": {
-            "category": "Financial Stability",
-            "text": "Do you have insurance and 3-6 months emergency fund?",
+            "category": "I - YOUR FINANCIAL STABILITY",
+            "text": "How prepared are you for emergencies? (Do you have insurance + 3–6 months expenses?)",
             "options": {
-                "A": "Yes, fully covered",
-                "B": "Partially covered",
-                "C": "No, not yet"
+                "A": "Not prepared",
+                "B": "Partially prepared",
+                "C": "Well prepared"
             }
         },
         "Q3": {
-            "category": "Goals & Time Horizon",
+            "category": "II - YOUR GOALS AND TIME HORIZON",
             "text": "What is your primary investment objective?",
             "options": {
-                "A": "Capital protection (preserve wealth)",
-                "B": "Balanced growth (moderate returns)",
-                "C": "Maximum growth (aggressive returns)"
+                "A": "Capital protection",
+                "B": "Balanced growth",
+                "C": "Maximum long-term growth"
             }
         },
         "Q4": {
-            "category": "Experience",
+            "category": "III - YOUR EXPERIENCE",
             "text": "How familiar are you with financial markets?",
             "options": {
-                "A": "Beginner (just starting)",
-                "B": "Some experience (1-3 years)",
-                "C": "Comfortable (3+ years, understand volatility)"
+                "A": "Beginner",
+                "B": "Some experience",
+                "C": "Experienced and comfortable"
             }
         },
         "Q5": {
-            "category": "Volatility Tolerance",
-            "text": "What's the maximum drop you can tolerate?",
+            "category": "IV - YOUR VOLATILITY TOLERANCE",
+            "text": "What level of portfolio drop can you tolerate without panic?",
             "options": {
-                "A": "5-10% (very low tolerance)",
-                "B": "10-25% (moderate tolerance)",
-                "C": "25-40% (high tolerance)"
+                "A": "5–10%",
+                "B": "10–25%",
+                "C": "25–40%"
             }
         },
         "Q6": {
-            "category": "Volatility Tolerance",
-            "text": "How long can you stay invested if value drops?",
+            "category": "IV - YOUR VOLATILITY TOLERANCE",
+            "text": "For how long are you okay with your portfolio staying below invested value?",
             "options": {
                 "A": "Less than 1 year",
-                "B": "1-3 years",
-                "C": "3-5+ years (long-term horizon)"
+                "B": "1–3 years",
+                "C": "3–5+ years"
             }
         },
         "Q7": {
-            "category": "Volatility Tolerance",
-            "text": "How would you feel during a market crash?",
+            "category": "IV - YOUR VOLATILITY TOLERANCE",
+            "text": "If your portfolio takes 2–3 years to recover from a crash, how would you feel?",
             "options": {
-                "A": "Very stressed, would lose sleep",
-                "B": "Stressed but manageable",
-                "C": "Comfortable, see it as opportunity"
+                "A": "Very stressed",
+                "B": "Stressed but okay",
+                "C": "Comfortable"
             }
         },
         "Q8": {
-            "category": "Behavior in Downturns",
-            "text": "What would you do if your investment fell 20%?",
+            "category": "V - YOUR BEHAVIOUR IN DOWNTURNS",
+            "text": "During a sharp market fall, what are you most likely to do?",
             "options": {
-                "A": "Sell immediately to prevent further loss",
-                "B": "Hold and wait for recovery",
-                "C": "Buy more (averaging down)"
+                "A": "Sell and move to safety",
+                "B": "Hold but feel tense",
+                "C": "Stay invested or add more"
             }
         },
         "Q9": {
-            "category": "Behavior in Downturns",
-            "text": "If your SIP is down, would you continue?",
+            "category": "V - YOUR BEHAVIOUR IN DOWNTURNS",
+            "text": "If your SIP shows negative returns for 1–2 years, what would you do?",
             "options": {
-                "A": "Stop SIP immediately",
+                "A": "Stop or reduce SIP",
                 "B": "Continue with discomfort",
-                "C": "Continue confidently (rupee cost averaging)"
+                "C": "Continue confidently"
             }
         }
     }
@@ -152,7 +152,14 @@ class RiskProfileCalculator:
     
     @classmethod
     def determine_category(cls, score: int) -> RiskCategory:
-        """Determine risk category from total score"""
+        """
+        Determine risk category from total score
+        
+        Score Ranges:
+        - Conservative: 7-13 points (Low tolerance, prefers stability)
+        - Moderate: 13-22 points (Balanced mindset, handles normal cycles)
+        - Aggressive: 22-27 points (Comfortable with drawdowns, long-term)
+        """
         if score <= 13:
             return RiskCategory.CONSERVATIVE
         elif score <= 22:
@@ -198,41 +205,48 @@ class RiskProfileCalculator:
     
     @classmethod
     def generate_recommendations(cls, category: RiskCategory, answers: Dict[str, str]) -> List[str]:
-        """Generate personalized recommendations"""
+        """Generate personalized recommendations based on user specifications"""
         recommendations = []
         
         if category == RiskCategory.CONSERVATIVE:
             recommendations.extend([
-                "Consider Fixed Deposits, Government Bonds, and Debt Mutual Funds",
-                "Limit equity exposure to 20-30% of portfolio",
-                "Focus on capital preservation over growth",
-                "Avoid videos promoting high-risk assets"
+                "Low tolerance for volatility",
+                "Prefers stability and capital protection",
+                "Should stick to higher debt allocation",
+                "Recommended: Fixed Deposits, Government Bonds, Debt Mutual Funds",
+                "Limit equity exposure to 20-30% of portfolio"
             ])
             
-            if answers.get("Q2") == "C":
+            # Check Q2 - Emergency preparedness
+            if answers.get("Q2") == "A":  # Not prepared
                 recommendations.append(
-                    "⚠️ PRIORITY: Build emergency fund before investing"
+                    "⚠️ PRIORITY: Build emergency fund (3-6 months expenses) before investing"
                 )
                 
         elif category == RiskCategory.MODERATE:
             recommendations.extend([
-                "Balanced portfolio: 50-60% equity, 40-50% debt",
+                "Balanced mindset",
+                "Can handle normal equity cycles",
+                "Good for blended portfolios",
+                "Recommended: 50-60% equity, 40-50% debt allocation",
                 "Consider Index Funds and Blue-Chip stocks",
-                "Systematic Investment Plans (SIP) recommended",
-                "Be cautious with crypto (max 5-10% allocation)"
+                "Systematic Investment Plans (SIP) recommended"
             ])
             
         else:  # AGGRESSIVE
             recommendations.extend([
-                "Can handle high-volatility assets",
-                "Suitable for growth stocks and crypto",
-                "Long-term horizon allows for market cycles",
-                "Focus on fundamental analysis over hype"
+                "Comfortable with drawdowns",
+                "Long-term horizon",
+                "Can take high equity allocation",
+                "Recommended: Growth stocks, equity mutual funds, index funds",
+                "Can consider crypto (max 5-10% with proper research)",
+                "Focus on fundamental analysis over short-term volatility"
             ])
             
-            if answers.get("Q4") == "A":
+            # Check experience level
+            if answers.get("Q4") == "A":  # Beginner
                 recommendations.append(
-                    "⚠️ High risk tolerance but low experience - educate yourself first"
+                    "⚠️ NOTE: High risk tolerance but beginner level - educate yourself before aggressive investing"
                 )
         
         return recommendations

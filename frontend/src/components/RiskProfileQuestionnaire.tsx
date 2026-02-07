@@ -29,84 +29,84 @@ const RiskProfileQuestionnaire = () => {
 
     const questions: Record<string, Question> = {
         Q1: {
-            category: "Financial Stability",
-            text: "How stable is your income?",
+            category: "I - YOUR FINANCIAL STABILITY",
+            text: "How steady is your income?",
             options: {
-                A: "Very stable (salaried, government job)",
-                B: "Somewhat stable (regular business income)",
-                C: "Unpredictable (freelance, commission-based)"
+                A: "Very stable",
+                B: "Somewhat stable",
+                C: "Unpredictable / volatile"
             }
         },
         Q2: {
-            category: "Financial Stability",
-            text: "Do you have insurance and 3-6 months emergency fund?",
+            category: "I - YOUR FINANCIAL STABILITY",
+            text: "How prepared are you for emergencies? (Do you have insurance + 3–6 months expenses?)",
             options: {
-                A: "Yes, fully covered",
-                B: "Partially covered",
-                C: "No, not yet"
+                A: "Not prepared",
+                B: "Partially prepared",
+                C: "Well prepared"
             }
         },
         Q3: {
-            category: "Goals & Time Horizon",
+            category: "II - YOUR GOALS AND TIME HORIZON",
             text: "What is your primary investment objective?",
             options: {
-                A: "Capital protection (preserve wealth)",
-                B: "Balanced growth (moderate returns)",
-                C: "Maximum growth (aggressive returns)"
+                A: "Capital protection",
+                B: "Balanced growth",
+                C: "Maximum long-term growth"
             }
         },
         Q4: {
-            category: "Experience",
+            category: "III - YOUR EXPERIENCE",
             text: "How familiar are you with financial markets?",
             options: {
-                A: "Beginner (just starting)",
-                B: "Some experience (1-3 years)",
-                C: "Comfortable (3+ years, understand volatility)"
+                A: "Beginner",
+                B: "Some experience",
+                C: "Experienced and comfortable"
             }
         },
         Q5: {
-            category: "Volatility Tolerance",
-            text: "What's the maximum drop you can tolerate?",
+            category: "IV - YOUR VOLATILITY TOLERANCE",
+            text: "What level of portfolio drop can you tolerate without panic?",
             options: {
-                A: "5-10% (very low tolerance)",
-                B: "10-25% (moderate tolerance)",
-                C: "25-40% (high tolerance)"
+                A: "5–10%",
+                B: "10–25%",
+                C: "25–40%"
             }
         },
         Q6: {
-            category: "Volatility Tolerance",
-            text: "How long can you stay invested if value drops?",
+            category: "IV - YOUR VOLATILITY TOLERANCE",
+            text: "For how long are you okay with your portfolio staying below invested value?",
             options: {
                 A: "Less than 1 year",
-                B: "1-3 years",
-                C: "3-5+ years (long-term horizon)"
+                B: "1–3 years",
+                C: "3–5+ years"
             }
         },
         Q7: {
-            category: "Volatility Tolerance",
-            text: "How would you feel during a market crash?",
+            category: "IV - YOUR VOLATILITY TOLERANCE",
+            text: "If your portfolio takes 2–3 years to recover from a crash, how would you feel?",
             options: {
-                A: "Very stressed, would lose sleep",
-                B: "Stressed but manageable",
-                C: "Comfortable, see it as opportunity"
+                A: "Very stressed",
+                B: "Stressed but okay",
+                C: "Comfortable"
             }
         },
         Q8: {
-            category: "Behavior in Downturns",
-            text: "What would you do if your investment fell 20%?",
+            category: "V - YOUR BEHAVIOUR IN DOWNTURNS",
+            text: "During a sharp market fall, what are you most likely to do?",
             options: {
-                A: "Sell immediately to prevent further loss",
-                B: "Hold and wait for recovery",
-                C: "Buy more (averaging down)"
+                A: "Sell and move to safety",
+                B: "Hold but feel tense",
+                C: "Stay invested or add more"
             }
         },
         Q9: {
-            category: "Behavior in Downturns",
-            text: "If your SIP is down, would you continue?",
+            category: "V - YOUR BEHAVIOUR IN DOWNTURNS",
+            text: "If your SIP shows negative returns for 1–2 years, what would you do?",
             options: {
-                A: "Stop SIP immediately",
+                A: "Stop or reduce SIP",
                 B: "Continue with discomfort",
-                C: "Continue confidently (rupee cost averaging)"
+                C: "Continue confidently"
             }
         }
     };
@@ -187,8 +187,8 @@ const RiskProfileQuestionnaire = () => {
                                     animate={{ width: `${(result.total_score / 27) * 100}%` }}
                                     transition={{ duration: 1, ease: "easeOut" }}
                                     className={`h-full rounded-full ${result.category === 'Conservative' ? 'bg-blue-500' :
-                                            result.category === 'Moderate' ? 'bg-yellow-500' :
-                                                'bg-red-500'
+                                        result.category === 'Moderate' ? 'bg-yellow-500' :
+                                            'bg-red-500'
                                         }`}
                                 />
                             </div>
@@ -280,14 +280,14 @@ const RiskProfileQuestionnaire = () => {
                                     whileHover={{ scale: 1.02 }}
                                     whileTap={{ scale: 0.98 }}
                                     className={`w-full p-6 text-left rounded-2xl border-2 transition-all ${answers[currentQuestionKey] === key
-                                            ? 'bg-purple-500/30 border-purple-400 shadow-lg shadow-purple-500/30'
-                                            : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
+                                        ? 'bg-purple-500/30 border-purple-400 shadow-lg shadow-purple-500/30'
+                                        : 'bg-white/5 border-white/10 hover:border-white/30 hover:bg-white/10'
                                         }`}
                                 >
                                     <div className="flex items-center">
                                         <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center mr-4 ${answers[currentQuestionKey] === key
-                                                ? 'border-purple-400 bg-purple-500'
-                                                : 'border-gray-500'
+                                            ? 'border-purple-400 bg-purple-500'
+                                            : 'border-gray-500'
                                             }`}>
                                             {answers[currentQuestionKey] === key && (
                                                 <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
