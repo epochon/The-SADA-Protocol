@@ -64,19 +64,42 @@ Protect retail investors from pump-and-dump schemes, misleading financial advice
 
 ## 🔄 System Architecture
 
+### Modular Backend Structure
+
+The backend is now organized into specialized modules under `app/hype_slayer/`:
+
 ```
-┌─────────────────┐
-│   YouTube URL   │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────┐
+backend/app/
+├── hype_slayer/           # Core HypeSlayer modules
+│   ├── transcript.py      # YouTube transcript extraction
+│   ├── entity_parser.py   # LLM-based entity extraction
+│   ├── fact_checker.py    # Market data verification
+│   ├── sentiment.py       # VADER sentiment analysis
+│   ├── bullshit_detector.py # Deterministic scam detection
+│   └── decision_gate.py   # Risk-adjusted scoring
+├── api/
+│   └── hypeslayer.py      # REST API endpoints
+├── middleware.py          # Adversarial defense layer
+└── main.py                # FastAPI application
+```
+
+### Data Flow Pipeline
+
+```
+┌─────────────────┐       ┌───────────────────┐
+│   YouTube URL   │       │ User Risk Profile │
+└────────┬────────┘       └─────────┬─────────┘
+         │                          │
+         ▼                          │
+┌───────────────────────────────────▼─────────┐
 │  1. Transcript Fetcher (youtube-transcript) │
+│     Module: transcript.py                   │
 └────────┬────────────────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────────────────┐
 │  2. Entity Parser (Groq LLM + LangChain)    │
+│     Module: entity_parser.py                │
 │     - Extract ticker (GME, BTC, etc.)       │
 │     - Extract claim ("will hit $500")       │
 │     - Extract timeline ("by next month")    │
@@ -88,16 +111,19 @@ Protect retail investors from pump-and-dump schemes, misleading financial advice
 │  3. Parallel Analysis                       │
 │  ┌──────────────────────────────────────┐   │
 │  │ Fact Checker (yfinance)              │   │
+│  │ Module: fact_checker.py              │   │
 │  │ - Fetch real market data             │   │
 │  │ - Calculate evidence quality         │   │
 │  └──────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────┐   │
 │  │ Hype Detector (VADER)                │   │
+│  │ Module: sentiment.py                 │   │
 │  │ - Sentiment analysis                 │   │
 │  │ - Calculate hype penalty             │   │
 │  └──────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────┐   │
 │  │ Bullshit Score (Deterministic)       │   │
+│  │ Module: bullshit_detector.py         │   │
 │  │ - Check data availability            │   │
 │  │ - Detect scam patterns               │   │
 │  └──────────────────────────────────────┘   │
@@ -105,8 +131,10 @@ Protect retail investors from pump-and-dump schemes, misleading financial advice
          │
          ▼
 ┌─────────────────────────────────────────────┐
-│  4. Decision Gate                           │
+│  4. Decision Gate (Risk-Adjusted)           │
+│     Module: decision_gate.py                │
 │     Score = (Evidence + Data) - (Risk+Hype) │
+│     *Personalization Modifier Applied*      │
 │     Decision: REFUSE if Score < 50          │
 │               VERIFY if Score >= 50         │
 └────────┬────────────────────────────────────┘
@@ -122,7 +150,150 @@ Protect retail investors from pump-and-dump schemes, misleading financial advice
 
 ---
 
-## 💡 Use Cases & Applications
+## � User Risk Profiling & Personalization
+
+**NEW FEATURE**: HypeSlayer incorporates a psychometric risk assessment module to tailor its "Bullshit Score" and analysis warnings to the specific financial tolerance of the user. This ensures that a "Conservative" investor receives stricter warnings about volatile assets than an "Aggressive" trader.
+
+### 1. The Questionnaire (Input)
+
+The frontend presents a **9-question multi-step form** covering five dimensions of financial health:
+
+#### I - Financial Stability
+1. Income steadiness (Very stable / Somewhat stable / Unpredictable)
+2. Emergency preparedness (Insurance + 3-6mo expenses?)
+
+#### II - Goals & Time Horizon
+3. Primary objective (Capital protection / Balanced / Max growth)
+
+#### III - Experience
+4. Market familiarity (Beginner / Some experience / Comfortable)
+
+#### IV - Volatility Tolerance
+5. Tolerable drop (5-10% / 10-25% / 25-40%)
+6. Time under water (<1 yr / 1-3 yrs / 3-5+ yrs)
+7. Crash recovery feeling (Very stressed / Stressed / Comfortable)
+
+#### V - Behavior in Downturns
+8. Action during fall (Sell / Hold / Buy)
+9. SIP behavior (Stop / Continue with discomfort / Continue confidently)
+
+### 2. Scoring Algorithm (Logic)
+
+Each answer is assigned a weighted point value:
+- **A (Conservative)** = 1 point
+- **B (Moderate)** = 2 points
+- **C (Aggressive)** = 3 points
+
+**Total Score Mapping:**
+- **7–13 points**: Conservative (Low tolerance, prefers debt/stability)
+- **13–22 points**: Moderate (Balanced, handles normal cycles)
+- **22–27 points**: Aggressive (High tolerance, long horizon)
+
+### 3. Integration with Decision Gate
+
+The Risk Profile is passed to the `decision_gate.py` module, which applies a **Personalization Modifier** to the base Bullshit Score:
+
+```python
+# Pseudo-code from decision_gate.py
+def calculate_personalized_score(
+    base_score: float,
+    asset_class: str,
+    user_profile: dict
+) -> dict:
+    """
+    Adjust the bullshit score based on user risk tolerance
+    """
+    modifier = 0
+    warnings = []
+    
+    # Conservative users get stricter warnings
+    if user_profile["category"] == "Conservative":
+        if asset_class in ["crypto", "microcap", "options"]:
+            modifier += 30
+            warnings.append(
+                "⚠️ This asset class conflicts with your Capital Protection goal"
+            )
+        if base_score > 40:
+            warnings.append(
+                "🚨 High Risk: You indicated panic at 10% drops; "
+                "this asset frequently drops 20%+ in a week"
+            )
+    
+    # Moderate users get balanced warnings
+    elif user_profile["category"] == "Moderate":
+        if asset_class in ["meme_coin", "penny_stock"]:
+            modifier += 15
+            warnings.append("⚠️ High volatility asset detected")
+    
+    # Aggressive users only get scam warnings
+    elif user_profile["category"] == "Aggressive":
+        # Focus on accuracy, not volatility
+        if base_score < 50:
+            warnings = []  # Don't lecture on volatility
+    
+    final_score = min(base_score + modifier, 100)
+    
+    return {
+        "score": final_score,
+        "decision": "REFUSE" if final_score >= 50 else "VERIFY",
+        "personalized_warnings": warnings,
+        "risk_alignment": check_alignment(asset_class, user_profile)
+    }
+```
+
+### 4. Frontend State Management
+
+The Risk Profile is stored in **Zustand** (lightweight state management) and persists across sessions:
+
+```typescript
+// frontend/src/store/riskProfileStore.ts
+import create from 'zustand';
+import { persist } from 'zustand/middleware';
+
+interface RiskProfile {
+  score: number;
+  category: 'Conservative' | 'Moderate' | 'Aggressive';
+  answers: Record<string, string>;
+  completedAt: string;
+}
+
+export const useRiskProfileStore = create(
+  persist(
+    (set) => ({
+      profile: null,
+      setProfile: (profile: RiskProfile) => set({ profile }),
+      clearProfile: () => set({ profile: null }),
+    }),
+    { name: 'hypeslayer-risk-profile' }
+  )
+);
+```
+
+### 5. API Integration
+
+When analyzing a video, the frontend sends the Risk Profile alongside the video URL:
+
+```typescript
+// Example API call
+const response = await fetch('http://localhost:8000/hypeslayer/analyze-video', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    video_url: 'https://youtube.com/watch?v=...',
+    user_profile: {
+      score: 10,
+      category: 'Conservative',
+      constraints: ['avoid_crypto', 'max_drawdown_10pct']
+    }
+  })
+});
+```
+
+The backend's `decision_gate.py` then applies the personalization logic before returning the final verdict.
+
+---
+
+## �💡 Use Cases & Applications (Updated)
 
 ### **1. Retail Investor Protection**
 **Problem**: Inexperienced investors fall victim to pump-and-dump schemes promoted on YouTube/TikTok.
