@@ -61,41 +61,64 @@ def parse_entities(transcript: str) -> Dict[str, Any]:
             "refuse_reason": "Transcript too short or empty for meaningful analysis."
         }
     
+
     # Truncate very long transcripts to avoid token limits
     max_chars = 8000
     truncated = transcript[:max_chars] if len(transcript) > max_chars else transcript
     
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4-turbo-preview",
-            messages=[
-                {"role": "system", "content": ENTITY_EXTRACTION_PROMPT},
-                {"role": "user", "content": f"Analyze this video transcript and extract financial entities:\n\n{truncated}"}
-            ],
-            temperature=0.2,  # Low temperature for consistent extraction
-            response_format={"type": "json_object"}
-        )
-        
-        result = json.loads(response.choices[0].message.content)
-        
-        # Validate and normalize response
-        return normalize_entity_response(result)
-        
-    except json.JSONDecodeError:
-        return {
-            "status": "error",
-            "asset": None,
-            "claim": None,
-            "error": "Failed to parse LLM response as JSON"
-        }
-    except Exception as e:
-        # Fallback for API errors
-        return {
-            "status": "error",
-            "asset": None,
-            "claim": None,
-            "error": f"Entity extraction failed: {str(e)}"
-        }
+    # Priority 1: OpenAI (Best Quality)
+    if os.getenv("OPENAI_API_KEY"):
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[
+                    {"role": "system", "content": ENTITY_EXTRACTION_PROMPT},
+                    {"role": "user", "content": f"Analyze this video transcript and extract financial entities:\n\n{truncated}"}
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"}
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            return normalize_entity_response(result)
+            
+        except json.JSONDecodeError:
+            return {"status": "error", "error": "Failed to parse LLM response as JSON"}
+        except Exception as e:
+            # If OpenAI fails, fall through to fallback? No, error out if key was provided but call failed.
+            return {"status": "error", "error": f"OpenAI extraction failed: {str(e)}"}
+
+    # Priority 2: Groq (Free Tier / Llama 3)
+    else:
+        print("ℹ️ OpenAI Key missing. Attempting fallback to Groq (Llama 3)...")
+        try:
+            # Lazy import to avoid crash if GROQ_API_KEY is missing (HypeSlayerLLM init checks key)
+            from app.agent.hypeslayer_llm import hypeslayer_llm
+            
+            groq_result = hypeslayer_llm.extract_entities(truncated)
+            
+            # Map ExtractedEntity to HypeSlayer dict format
+            status = "refused" if not groq_result.ticker else "success"
+            normalized = {
+                "status": status,
+                "asset": {"type": groq_result.asset_type, "ticker": groq_result.ticker} if groq_result.ticker else None,
+                "claim": groq_result.claim,
+                "claim_type": "general", # Groq module doesn't extract type yet
+                "timeline": groq_result.timeline,
+                "confidence": groq_result.confidence,
+                "refuse_reason": groq_result.refusal_reason
+            }
+            return normalized
+            
+        except ImportError:
+            return {"status": "error", "error": "Groq module dependencies missing."}
+        except ValueError as ve:
+            return {
+                "status": "error", 
+                "error": "Missing API Keys. Please provide OPENAI_API_KEY (Recommended) or GROQ_API_KEY (Free)."
+            }
+        except Exception as e:
+            return {"status": "error", "error": f"Groq extraction failed: {str(e)}"}
 
 
 def normalize_entity_response(result: Dict) -> Dict[str, Any]:
